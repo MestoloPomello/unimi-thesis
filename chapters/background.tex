@@ -1,0 +1,353 @@
+\chapter{Background}
+
+\section{Memory structure}
+Memory is one of the most critical components from a security point of view in a computer system, since during program execution it contains not only the data being processed but also the information necessary to determine the program's behavior. This includes:
+\begin{itemize}
+    \item \textbf{variables} containing temporary data used by the executed program(s);
+    \item \textbf{data structures}, relationships between different types of objects for the purpose of managing more complex data;
+    \item \textbf{pointers with memory addresses} which tell the program "where" a certain resource is. They can point:
+    \begin{itemize}
+        \item to other objects, to allow the program to read or write data;
+        \item to functions, to allow the program to execute instructions located at a specific position;
+    \end{itemize}
+    \item \textbf{information used to manage the execution flow}, such as the address of the first instruction that needs to be executed when returning from a function call.
+\end{itemize}
+Unauthorized access to or arbitrary modification of these elements can therefore have consequences ranging from simple data corruption or program crashes to changes in the control flow and, in the most severe cases, the execution of unauthorized operations, which is the subject we're going to examine. To understand the origin and effects of the main memory corruption vulnerabilities, it is therefore useful to first consider how the memory space associated with a program is organized into its main regions. 
+
+\clearpage
+\begin{figure}[h]
+    \centering
+    \includegraphics{images/stack-heap.png}
+    \caption{Structure of memory areas.}
+    \label{fig:stack_heap}
+\end{figure}
+
+\noindent The two areas primarily affected by attacks of this kind are the stack and the heap.
+
+\subsection{Stack}
+The stack is a data structure organised according to a LIFO (Last In, First Out) policy and used primarily for managing function calls. Each function call involves the creation of a \emph{stack frame} containing local variables, parameters and return information (such as the return address, which tells the program the point in the calling code from which to resume execution once the function has been exited). The allocation and deallocation of memory on the stack are automatic and handled by the compiler: when a function terminates, its corresponding frame is removed.
+
+\subsection{Heap}
+The heap is a memory region used for dynamic allocations, managed explicitly by the programmer using primitives such as \texttt{malloc}/\texttt{free} in C or \texttt{new}/\texttt{delete} in C++. Unlike the stack, the heap does not follow a strict allocation order and allows for greater flexibility in managing the lifecycle of objects. However, it is precisely this flexibility that introduces complexity which can lead the programmer into error.
+\am{Non so se può servire menzionare che in realta (e se non ricordo male) malloc/new organizzano la memoria in un certo modo. Le allocazioni "pure" in linux avvengono tramite brk e mmap se google non mente (conosco solo il corrispettivo WIndows che è VirtualAlloc per intenderci). Vedi tu se può avere senso, se non serve cancella pure il commento}
+
+\subsection{Pointers}\label{pointers}
+In memory-unsafe languages, pointers are \amst{data structures}{non so se li definirei data structures i puntatori, mi verrebbe da dire più "identifier"} that contain \am{Prova giusto a riscrivere questo pezzettino qui. Non direi "che contengono in indirizzo dello heap" ma almeno "Possono contenere"} the address of a specific area of heap memory (to which they "point") and, for example in C, are initialised using the \texttt{malloc} function and freed using the \texttt{free} function. The programmer can use them to perform operations both on the addresses they contain and on the values contained in the memory cells they point to.
+
+Given their nature, they are one of the main vectors for memory-related attacks. We therefore introduce the concept of a \textbf{dangling pointer}: a pointer, if manipulated incorrectly, may continue to point to an area that is no longer valid, typically because it has been deallocated or has expired. This allows an attacker to read or write content to which they should not have access.
+
+\begin{listing}[H]
+    \captionof{listing}{Example of dangling pointer in C.}
+    \cppfile{code/dangling-pointer.c}
+\end{listing}
+
+\noindent Under the right conditions, exploiting a dangling pointer can lead to \textbf{privilege escalation}, i.e. a low-level user gaining administrator privileges, thereby putting sensitive data or, in the most serious cases, entire systems at risk.
+
+\subsection{Reference counting mechanisms}
+To mitigate the problem of dangling pointers and to avoid placing the responsibility for memory management directly on the programmer, \textbf{reference counting} mechanisms have been introduced. These mechanisms associate each object with a counter that tracks the number of active references to it, so that, provided there are no errors, the relevant memory area is freed when it is no longer in use.
+
+\begin{listing}[H]
+    \captionof{listing}{Simple example of a reference counting mechanism.}
+    \cppfile{code/refcount.c}
+\end{listing}
+
+\noindent When a new structure gains access to the object, the counter is incremented. Conversely, when the reference is no longer needed, the counter is decremented. When the counter reaches the value \textit{zero}, the system considers the object to be no longer in use and frees up the memory it occupies.
+
+This approach helps to avoid premature deallocations and to coordinate concurrent access to shared resources more reliably. However, errors in counter management (such as multiple decrements or missing increments) can lead to critical conditions.
+
+Early deallocation of an object that is still in use can, in fact, result in \textit{dangling pointers} and use-after-free vulnerabilities, while failure to release references can cause memory leaks and uncontrolled memory consumption. For this reason, reference counting is one of the most delicate mechanisms in memory management within memory-unsafe systems.
+
+\section{Linux and its kernel}
+The kernel is the central component of a Linux operating system and operates with higher privileges than normal programs running in user space. Its main task is to mediate access to hardware resources and to provide applications with a controlled set of services via system calls. This is convenient for the developer, but it also carries some risks: while a bug in a user space program is confined to its process, memory corruption in kernel space can compromise the stability of the entire system or allow operations to be carried out with elevated privileges (the \textit{privilege escalation} that we mentioned in section \ref{pointers}).
+
+In addition to this, Linux keeps a highly modular structure, as some functionality can be compiled as a loadable module. However, this flexibility does not provide complete isolation: a loaded module continues to run in kernel space and can access the kernel's internal structures, with the same aforementioned security implications.
+
+Since its first release in 1991, Linux has evolved from a small-scale project into a platform used on a vast number of servers and devices all around the world, as we can see on the following table which sums up the distribution of Linux-powered machines around the world \cite{bib:fosspost}:
+
+\begin{table}[h]
+    \centering
+    \begin{tabular}{|c|c|}
+        \hline
+        \textbf{Metric} & \textbf{Linux Share} \\\hline
+        Server OS Market (2026 est.) & 51.3\% \\\hline
+        Websites (known OS) & 61.3\% \\\hline
+        Top 1 Million Web Servers & 96.3\% \\\hline
+        Government Data Centers & 64.9\% \\\hline
+        Top500 Supercomputers & 100\% \\
+        \hline
+    \end{tabular}
+\end{table}
+
+\noindent This evolution has been accompanied by the introduction of numerous hardware architectures, new drivers and subsystems, which support a broader quantity of features but bring more security and stability issues on the kernel's side. The interfaces exposed to user space are kept as stable as possible, while the kernel's internal APIs may change significantly between different versions.
+
+These characteristics make automated kernel analysis particularly complex. A detection tool has to deal with code spread across multiple modules that interact in a non-linear manner. Furthermore, some tools require a specific version of the kernel, the compiler or their dependencies, while others necessitate changes to the build system or a full instrumentation phase. The continuous evolution of internal APIs can quickly make unmaintained tools incompatible. The kernel documentation distinguishes between numerous categories of tools, such as:
+\begin{itemize}
+    \item \textit{static analyzers}: code analysis by tracking objects' paths without executing the code. An example is UAFX, which we tested and discuss in section \ref{uafx}
+    \item \textit{sanitizers}: suspect behaviour detection by instrumentating the code through a compiler
+    \item \textit{code coverage tools}: measurement of the quantity of code covered by tests
+    \item \textit{fuzzing tools}: generation of random inputs in order to test different execution paths for the analyzed software 
+    \item \textit{mechanisms for detecting race conditions}: identification of critical code sections where a race condition may happen
+\end{itemize}
+
+\subsection{LLVM}
+Most of the tools we have considered are based on LLVM. It is a modular infrastructure for building compilers and code analysis tools. Its central component is an intermediate representation (generated by a compiler; one of the most used is Clang), commonly referred to as LLVM IR, on which modifications can be made that are independent of the source language and, to some extent, of the target architecture. 
+
+The use of LLVM is significant in the field of security because it allows analyses and transformations to be incorporated directly into the compilation process (e.g. by adding checks that will be executed at runtime). This integration enables more in-depth analyses than simply processing the source code textually, albeit at the expense of the performance of the system being analysed; however, a system compiled with LLM will likely not be made available to a user but will be used solely for analysis purposes.
+
+\section{Overview of vulnerabilities}
+Every system has flaws and is vulnerable to attacks of varying severity. These flaws, which often stem from logical errors or the incorrect management of the lifecycle of objects in memory, can enable an attacker to compromise the integrity of the system, with different objectives. Let's introduce some of the best-known examples relevant to our analysis.
+
+\subsection{Buffer overflow}
+A lack of checks on user input (for example, when entering a string) can cause the process to "overflow" the memory area allocated to it, allowing an attacker to partially or completely overwrite data belonging to other processes or to the system.
+
+\subsection{Use after free (UAF)}
+Incorrect management of the dynamic memory lifecycle can lead to access to portions of memory that have already been deallocated (use-after-free), allowing an attacker to reuse these areas to inject controlled data and influence the program's behaviour via dangling pointers.
+
+\begin{listing}[H]
+    \captionof{listing}{Simple example of a UAF exploit in C.}
+    \cppfile{code/uaf.c}
+\end{listing}
+
+% TODO - approfondire uaf qui
+
+\subsection{Double free}
+In the same way as a "use-after-free", multiple deallocation of the same area ("double free") can corrupt the internal structures of the memory allocator, opening the way for manipulation of the heap's state and subsequent arbitrary write operations.
+
+\section{Exploiting UAF and refcount errors}
+
+From an exploit perspective, the critical consequence of a reference-counting error is a discrepancy between the logical lifetime of an object and the actual lifetime of the memory area in which it is allocated. The object may be freed while an execution context still holds a pointer to it, for example within a shared data structure, a callback or a local variable belonging to another thread. The retained reference becomes a \textit{dangling pointer}. Subsequent dereferencing does not necessarily result in access to invalid or unmapped memory: in many cases, in fact, as in the CVE we are going to examine, the underlying area remains managed by the allocator's heap and can be reallocated to a new allocation, allowing a lifecycle management error to turn into an exploitable memory corruption condition.
+
+The first stage of an exploit generally involves forcing an incorrect transition in the lifecycle. Depending on the vulnerability, the attacker may need to trigger an error-handling path, repeatedly register and unregister a resource, close an object while it is still in use by another operation, or coordinate multiple concurrent operations. In vulnerabilities relating to reference counting, the key event is often the premature release of the last reference recognised by the system, even though another reachable reference still exists. The attacker must therefore maintain a code path capable of accessing the object after it has been deallocated, while simultaneously causing the counter to reach zero.
+
+This phase can be particularly complex in concurrent systems. One thread might acquire or retain a pointer to an object, while another thread removes the object from a shared structure and frees what the system considers to be the last reference. If the acquisition of the reference is not correctly synchronised with the destruction of the object, we could end having a deallocation between the retrieval of the pointer and the increment of the counter. Similarly, a callback or an asynchronous task may retain an address without actually holding a reference to it. An attacker could attempt to widen these race condition windows by increasing the system's load or using multiple threads.
+
+Once the object has been freed, the dangling pointer alone gives us only limited control. The next objective is to trick the allocator into reusing the freed memory for a new allocation whose contents can be controlled by the attacker (= \textbf{heap grooming} or \textbf{heap shaping}). The attacker performs a controlled sequence of allocations and deallocations to manipulate the state of the heap and increase the likelihood that a chosen object will occupy the same memory region as the vulnerable object.
+
+The feasibility of this replacement depends heavily on the behaviour of the allocator. Allocators, whether in kernel space or user space, tend to group allocations into size classes and to reuse freed regions for compatible objects. Consequently, the attacker typically seeks a replacement object belonging to the same allocation class as the vulnerable structure and which can be created repeatedly via an accessible interface.
+
+Following memory reuse, two logically distinct objects occupy the same region at different times. The vulnerable code still interprets the dangling pointer according to the layout and semantics of the original object (as it should), while the allocator treats the region as belonging to the new object. This creates a form of type confusion induced by memory reuse: the fields of the new object may be interpreted as flags, sizes, reference counters, pointers to lists or function pointers belonging to the original structure.
+
+The resulting access can provide various exploit primitives. A read via the dangling pointer may reveal heap addresses, kernel pointers or other sensitive values, making it easier to bypass mechanisms such as ASLR (Address Space Layout Randomization: a technique for randomizing addresses of stack, heap and libraries in memory which usually helps preventing memory attacks). If a corrupted field is subsequently used as a pointer or index, we can obtain out-of-bounds read or arbitrary memory access primitives. A write via the obsolete reference, on the other hand, can alter the state of the new object, resulting in a controlled or partially controlled write to another area of memory.
+
+Objects that contain pointers to functions or references to related structures are of particular interest to us, as their corruption can indirectly affect the control flow. However, modern exploits do not necessarily aim to immediately overwrite a function pointer. Mechanisms such as Control-Flow Integrity (CFI), memory non-executability and restrictions on code execution in kernel space often make direct redirection difficult. Instead, the exploit uses the initial vulnerability to construct more powerful read and write primitives, obtain address information and modify sensitive data structures. These primitives can then be exploited to alter credentials, permissions or the state of a process, depending on the execution context.
+
+A pending reference may also interact directly with the reference counting mechanism. If the obsolete pointer is used in a deallocation operation, the system may decrement a field that no longer represents the original counter. This may corrupt the new object or cause a second deallocation of the same memory region. In such cases, the initial error may lead to additional conditions such as double-free or premature destruction of the new object. The exploit may therefore involve multiple consecutive violations of the object's lifecycle.
+
+\vspace{3mm}
+\noindent This entire exploitation chain can be represented as a sequence of steps:
+\begin{enumerate}
+    \item Triggering an incorrect reference-counting transition
+    \item Maintaining a reachable dangling pointer
+    \item Reusing the freed memory with a suitable replacement object
+    \item Accessing the new contents via the obsolete type
+    \item Transforming the resulting behaviour into a useful (usually malicious) memory primitive
+\end{enumerate}
+\noindent Although this is only a generalized explanation of the idea and process behind exploiting this type of vulnerability, as we will see with the specific CVE it usually isn't easy as it seems, due to the need for certain conditions to be met.
+
+\section{Existing tools for detecting UAF vulnerabilities}
+For all known bugs, there is a wide range of tools described in the academic literature, used either individually or in combination, that serve (or help) to detect them. UAF issues, however, especially when related to reference counting problems, are particularly challenging.
+Due to the unpredictable nature of these bugs, the numerous conditions required to exploit them, and the variety of contexts in which they can occur, identifying them is by no means easy. In addition to the identification process itself, other problems may arise, such as large volumes of false positives that can cause a tool to be inaccurate on its own and require human review to distinguish them from true positives, or the need for extreme computational power to run the tool effectively.
+
+Below are some examples of tools capable of analyzing code and detecting use-after-free vulnerabilities. Since each vulnerability exploits different weaknesses, we have compiled a list of tools with different purposes and modes of operation to provide a broader range of options in this regard.
+
+{
+    \renewcommand{\arraystretch}{1.5} % Padding verticale
+    \begin{table}[H]
+        \centering
+        \begin{tabular}{|c|c|c|c|}
+            \hline
+            \textbf{Tool} & \textbf{LLVM-based} & \textbf{Kernel-usable?} & \textbf{Public source?} \\\hline
+            UAFX \cite{bib:ndss-uafx} & Yes & Yes & Yes \\\hline
+            CountDown \cite{bib:countdown} & Yes & Yes & Yes \\\hline
+            Infer \cite{bib:infer} & Yes (+ Clang) & Yes & Yes \\\hline
+            Clang Static Analyzer \cite{bib:clang} & Yes & Yes & Yes \\\hline
+            Syzkaller \cite{bib:syzkaller} & Yes & Yes & Yes \\\hline
+            GCC-fanalyzer \cite{bib:gcc-fanalyzer} & No & No & Yes \\\hline
+            CRed \cite{bib:cred} & Yes & No & No \\\hline
+            Cppcheck \cite{bib:cppcheck} & Yes & No & Yes \\\hline
+            SVF-derived tools \cite{bib:svf} & Yes & No & Yes \\\hline
+            FreeWill \cite{bib:freewill} & Yes & No & No \\\hline
+            LinkRID \cite{bib:linkrid} & Yes & Yes & No \\\hline
+            CRCount \cite{bib:crcount} & Yes & No & No \\\hline
+            UAFChecker \cite{bib:uafchecker} & Yes & No & No \\\hline
+            DCUAF \cite{bib:dcuaf} & Yes & Yes & No \\\hline
+            SinkFinder \cite{bib:sinkfinder} & Yes & No & No \\\hline
+            Goshawk \cite{bib:goshawk} & Yes & Yes & Yes \\\hline
+            CID \cite{bib:cid} & Yes & Yes & No \\\hline
+        \end{tabular}
+    \end{table}
+}
+
+\noindent There were two tools specifically designed to detect UAF bugs in the Linux kernel: CountDown and CID. Unfortunately, CID does not have publicly available source code, and, as with other tools that do not meet this criterion, we decided to exclude them from the selection.\\
+Since our focus was on a use-after-free vulnerability involving a reference-counting issue, we also excluded some tools whose papers clearly stated that they would not be effective for this purpose.\\
+Finally, we excluded the tools that would not have worked on the kernel because they were designed for smaller, less complex sections of code.\\
+After considering these factors, the decision was made to choose UAFX and CountDown.
+
+\subsection{UAFX}\label{uafx}
+UAFX is a static analyzer, presented at NDSS 2025 \cite{bib:ndss-uafx}, designed to detect \textit{cross-entry} (non-linear) use-after-free vulnerabilities in the Linux kernel. The term "cross-entry" refers to conditions in which the deallocation and subsequent use of an object occur through different entry points (e.g system calls, callbacks, driver interfaces). In such cases, the link between the deallocation point and the usage point may involve parts distributed across distinct execution paths, making it difficult to detect using analyzers limited to a single function or a single call chain (i.e. where memory allocation, usage, and deallocation occur in a linear pattern). UAFX's approach is based on achieving two main macro-objectives:
+
+\begin{itemize}
+    \item \textbf{Escape-Fetch-based Cross-Entry Alias Analysis}
+    \item \textbf{Systematic Partial-Order Constraint-based UAF Validation}
+\end{itemize}
+
+\noindent We describe them with reference to the following figure:
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[scale=.4]{images/uafx-example.png}
+    \caption{Example of code entry points and how they are handled by UAFX.}
+    \label{fig:uafx-example}
+\end{figure}
+
+\subsubsection{Escape-Fetch-based Cross-Entry Alias Analysis}
+UAFX treats object assignments to pointers as escapes and retrievals (from "unknown" areas) as fetches. UAFX attempts to construct Escape-Fetch Paths (EFPs) to define aliases that track memory allocation, usage, and deallocation from different access points. This is necessary because, from the perspective of a single function, an object may have an unknown origin (as is commonly the case with an externally initialized pointer, such as \texttt{g1} in \texttt{entry3}).
+
+\subsubsection{Systematic Partial-Order Constraint-based UAF Validation}
+Once the aliases/paths have been confirmed, UAFX verifies that the conditions for a UAF actually exist.
+If, for example, there is a check on a flag (\texttt{entry0}, \texttt{entry2}) that is manipulated by multiple entry functions and used to prevent a UAF on a critical pointer, that path must be discarded.
+
+\subsubsection{Workflow}
+We can break down UAFX's workflow as follows:
+\begin{enumerate}
+    \item \textbf{Identifying entry functions.} This is done semi-automatically, starting with:
+    \begin{itemize}
+        \item \textit{General call analysis}: functions that serve as entry points typically have no callers in the program, so they are candidates.
+        \item \textit{Software-based heuristics}: the paper uses drivers as an example; these typically have entry points in a \texttt{file\_operations} structure, which makes them easy to identify.
+    \end{itemize}
+    After these initial automated steps, a manual review is conducted to exclude unnecessary candidates or to add others.
+
+    \item \textbf{Code analysis and summary for each entry.} The entry functions are analyzed, and all escape/fetch objects, critical regions, and condition sets/checks (such as the flag in the example) are identified. UAFX generates a summary of all possible paths (in Figure \ref{fig:uafx-example}, the graph in the upper right).
+
+    \item \textbf{Cross-entry detection of free and use sites with aliases.} UAFX considers all sites where memory regions are freed and used as potential candidates for UAF. In the example, with the path \texttt{entry0}-\texttt{entry3}, defined as follows (between the \textit{free} operation on line 6 and the \textit{use} operation on line 20):
+    \begin{center}
+        (c\_obj@1 $\longrightarrow$ g0 $\longrightarrow$ d\_obj@10 $\longrightarrow$ g1 $\longrightarrow$ d\_obj@20)
+    \end{center}
+    there is a potential UAF.
+
+    \item \textbf{UAF Validation.} UAFX considers all candidates and evaluates their constraints within the path (order, locks, set/check conditions) to determine whether each one is actually a vulnerability.
+    It also verifies that the free and use sites actually access the same object, taking into account the entire escape-fetch path.
+    For this purpose, SMT solvers can be used (the paper cites z3 as an example).
+\end{enumerate}
+
+\subsubsection{Thread tracking}
+Since some UAFs are caused by race conditions, UAFX recognizes two types of thread-related lifecycles:
+\begin{itemize}
+    \item \textbf{Thread creation}: calls that create child threads (\texttt{pthread\_create}, \texttt{fork}). UAFX retrieves information from these events (e.g., the thread's entry function or parameters)
+
+    \item \textbf{Thread joins} (\texttt{pthread\_join}, \texttt{wait}): events that ensure threads exit before a certain point in the parent thread. UAFX pairs each exit event with its corresponding creation event to track the entire thread lifecycle.
+\end{itemize}
+
+\subsubsection{UAFX and CVE-2025-21756}
+Speaking specifically about our case, UAFX may not be able to automatically identify the UAF for CVE-2025-21756 because of two main issues.
+
+A first obstacle could be identifying the entry functions. As described earlier, automatic identification of candidates occurs for functions that have no callers, but this is not the case here because the functions that operate on socket objects are instead called by other functions.
+This could be resolved in the second step of the identification process, namely by manually adding the functions to the set of candidates.
+
+Another, more significant obstacle is the difficulty explicitly described in tracking reference counts (page 9 of the paper \cite{bib:ndss-uafx}, \textit{Reference Count Mechanisms}).
+UAFX intentionally avoids analyzing candidates involving reference counts, which is, in fact, the main cause of CVE-2025-21756, because of the excessive number of false positives that would be generated, in order to maintain high precision (but lower recall).
+Despite this, it would be theoretically possible to extend UAFX with the help of other previouslky mentioned tools (here and in UAFX's paper): LinKRID (page 14), CRCount, and FreeWill (page 15) can, with some modifications, be used together with UAFX to increase accuracy on reference count problems.
+
+As described in section
+% TODO - riferimento quando c'è capitolo e descrizione là
+, we tried making a slight modification to the UAFX code to see if we could also detect the reference counting issue.
+
+\subsection{CountDown}
+CountDown is a fuzzer for the Linux kernel, presented at CCS 2024 \cite{bib:countdown} and, unlike UAFX, it's specifically designed to detect memory timing errors caused by incorrect handling of reference counters. Unlike traditional fuzzers, which are primarily driven by code coverage, CountDown uses operations on reference counters as feedback to identify sequences of system calls that could potentially alter the lifecycle of those same objects. The tool is built on top of Syzkaller and extends its strategies for generating and mutating test programs.
+
+During execution, CountDown instruments the kernel to associate increments, decrements, and accesses to reference counters with the system calls that triggered them. Based on this information, it establishes relationships between system calls that operate on the same counters and assigns them a higher probability of being combined in the generated tests. The tool can also repeatedly insert operations that decrement a counter, in an attempt to trigger the object's deallocation, followed by operations that continue to access it. In this way, fuzzing is directed toward sequences that can more effectively expose UAFs caused by incorrect operations on counters.
+
+CountDown's approach is based on the idea of refcount-driven fuzzing to achieve two macro-objectives:
+\begin{itemize}
+    \item \textit{Identification of refcount-based relationships between syscalls}: instead of relying solely on syscall signatures or coverage, CountDown correlates syscalls that operate on the same object (\textit{shared refcounts}).
+
+    \item \textit{Systematic exposure of UAF bugs}: through targeted mutations, the tool attempts to force an object's refcount to zero and subsequently access that object via syscalls that share its reference.
+\end{itemize}
+
+\subsubsection{Workflow}
+CountDown's workflow can be broken down into three main phases:
+\begin{enumerate}
+    \item \textbf{Kernel instrumentation and logging}: CountDown instruments the refcount APIs in the Linux kernel to log every refcount operation using a 4-element tuple:
+    \begin{center}
+        $<S, O, \delta, V>$
+    \end{center}
+    where a syscall S updates the refcount O of a refcount by a value $\delta$. V is the final value.
+
+    The instrumented APIs are listed in the following table:
+
+    \begin{center}
+        \begin{tabular}{|c|c|}
+            \hline
+            \textbf{Name} & \textbf{Description} \\\hline
+            \texttt{refcount\_set} & set refcount to the given value \\\hline
+            \texttt{refcount\_add} & add the given value to refcount \\\hline
+            \texttt{refcount\_inc} & increase refcount by 1 \\\hline
+            \texttt{refcount\_dec} & decrease refcount by 1 \\\hline
+            \texttt{refcount\_add\_not\_zero} & add given value to refcount if refcount is not 0 \\\hline
+            \texttt{refcount\_inc\_not\_zero} & increment if the refcount is not 0 \\\hline
+            \texttt{refcount\_dec\_not\_one} & decrement if the refcount is not 1 \\\hline
+            \texttt{refcount\_dec\_if\_one} & decrement if the refcount is 1 \\\hline
+            \texttt{refcount\_dec\_and\_test} & decrement refcount and check if result is 0 \\\hline
+            \texttt{refcount\_sub\_and\_test} & subtract value from refcount and check it with 0 \\\hline
+        \end{tabular}
+        \label{table:refcounts}
+    \end{center}
+    
+    To identify the same object across different virtual machines (VMs), it uses a checksum of the call stack at the time of the object's initialization through \texttt{refcount\_set}.
+
+    CountDown creates a RAI map (\texttt{refcount-address-ID}) to link the addresses of the refcounts with their refcount IDs.\\
+    When a refcount is initialized, a new entry in the RAI map is created with its address and ID.\\
+    When a refcount reaches zero, the entry is removed from the map.\\
+    When a refcount is incremented or decremented, CountDown searches the address in the map to find its ID and records the operation.
+
+    During fuzzing, to connect refcount operations with syscalls, CountDown needs to record the Syzkaller syscall number (NR) for each operation. This is done in a thread-safe manner in order to avoid race condition, since the Linux kernel utilizes multiple threads to execute parallelized syscalls.
+
+    While tracking the refcount values, CountDown considers that one syscall may modify a refcount many times, but it only cares about the final variation ($\delta$). In order to do so, every refcount API listed in table \ref{table:refcounts} is modified to record every single refcount change.
+    This data is kept in a two-dimension table (one for the syscall number, one for the refcount ID), in which every entry records the current $\delta$ and the current $V$. 
+
+    \item \textbf{Reworking relationships between system calls}: CountDown constructs multiple relations among syscalls and refcounts starting from the refcount operations mapped in the 4-tuple format $(S, O, \delta, V)$.
+    
+    First, it identifies syscalls that effectively change the refcount of any object. It remaps a set of 4-tuples in a new map, where the key is the refcount ID and the value is a set of syscalls and their changes to the refcount ($\delta$), avoiding relations between syscalls from different programs (which can quickly become unrealiable).
+    
+    Based on the shared refcounts, every relation is reworked in a new one defined as \texttt{RefcntRelation}. The assumption is that, if two syscalls access the same refcount within one execution, they have a stronger relation with respect to triggering more complicated refcount operations. Each syscall set associated with a specific refcount is then split into a set of syscalls pairs. Following that, CountDown creates the syscall relation table, where each unique pair of syscalls has an entry and the value is the number of shared refcounts accessed by both.
+
+    \clearpage
+    \begin{center}
+        \begin{figure}[h]
+            \centering
+            \includegraphics[width=0.7\linewidth]{images/countdown-step2.png}
+            \caption{Example of refcount-based syscall relation construction.}
+            \label{fig:countdown-step2}
+        \end{figure}
+    \end{center}
+    
+    As explained in the paper, this newly constructed relation is more efficient in detecting refcount-related UAF bugs. However, the kernel code base is very large and refcount operations are not densely distributed. To solve the problem, the \texttt{RefCntRelation} is merged with the Syzkaller's standard \texttt{SyzRelation} and handled based on the fuzzing time. At the beginning of fuzzing, CountDown assigns a high priority to the original coverage-based relation to quickly explore more kernel code. As time goes on, it allocates more weight to CountDown's own relation so that the fuzzer can focus on testing complex refcount operations. This can be represented as the following formula:
+
+    \begin{center}
+        $OverallRelation = log_2(SyzRelation) + k * log_2 (RefcntRelation)$
+    \end{center}
+
+    $k$ starts with a small value and is incremented every time after testing a fixed number of test cases.
+
+    Since fuzzers are non-deterministic, different kernel instances can gather different relations. When a new one is received from one VM, CountDown synchronizes it across all instances (to ensure that the other instances can directly make use of it) by fetching each VM's report, merging them and then distributing the result to all instances.
+
+    \item \textbf{Guided program mutation}: CountDown uses the learned relationships to generate new programs. It starts by using the mutators from previous fuzzing tools (like Syzkaller) to mutate the program. Having assigned higher weights to refcount-based relations, the mutation will prefer combining syscalls that are strongly related regarding refcount operations.  
+
+    Then it creates a new mutator that combines refcount-related syscalls more aggressively. CountDown chooses one target program and runs it in order to collect all accessed refcounts. It will update the refcount-syscall map if the execution triggers new records. To mutate the program, it will randomly select a refcount from the collected set. If a refcount was accessed multiple times, it will have a higher probability to be selected. 
+
+    CountDown then searches the map for syscalls that operate on this refcount and selects one for insertion into the program, which is done reusing Syzkaller's logic, preferring a later position, because the syscalls at the beginning may work on the initialization of resources and refcounts.
+
+    In addition to new code coverage, CountDown considers any program that exhibits a new \texttt{(syscall, refcount)} pair never seen before to be "interesting" and saves it for future changes. This is done while fuzzing through checking whether the execution triggers new code coverage or a new refcount operation, which was previously missed. If that's the case, it saves the new program into the input queue for further mutations and updates the refcount-syscall map with the new entry.
+
+    As a final but important point, a triggered refcount error will not immediately result in a memory error. CountDown needs to trigger more operations to make the kernel release the object and access it through dangling references. It does so by inserting more refcount-related syscalls into the executed program in order to reduce the gap between a refcount bug and a UAF, so that sanitizers like KASAN can capture it.
+\end{enumerate}
+
+\subsubsection{Limitations}
+Although CountDown is optimized to detect UAFs with refcounts, it still has some limitations:
+\begin{itemize}
+    \item \textbf{Generic refcounts}: some refcounts (such as those in the AppArmor security module) are used by nearly all syscalls, creating "noise" and artificial relationships that CountDown must filter out to maintain accuracy.
+
+    \item \textbf{Coverage trade-off}: because it focuses heavily on refcount logic, CountDown may record slightly lower total code coverage (approximately 1.8\% – 4.3\% less) than Syzkaller, as it ignores paths unrelated to object management.
+
+    \item \textbf{Instrumentation overhead}: although optimized through selective logging (excluding interrupts and asynchronous tasks), the constant monitoring of every refcount operation introduces a higher computational load than traditional fuzzing.
+\end{itemize}
