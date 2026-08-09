@@ -28,11 +28,14 @@ Unauthorized access to or arbitrary modification of these elements can therefore
 The stack is a data structure organised according to a LIFO (Last In, First Out) policy and used primarily for managing function calls. Each function call involves the creation of a \emph{stack frame} containing local variables, parameters and return information (such as the return address, which tells the program the point in the calling code from which to resume execution once the function has been exited). The allocation and deallocation of memory on the stack are automatic and handled by the compiler: when a function terminates, its corresponding frame is removed.
 
 \subsection{Heap}
-The heap is a memory region used for dynamic allocations, managed explicitly by the programmer using primitives such as \texttt{malloc}/\texttt{free} in C or \texttt{new}/\texttt{delete} in C++. Unlike the stack, the heap does not follow a strict allocation order and allows for greater flexibility in managing the lifecycle of objects. However, it is precisely this flexibility that introduces complexity which can lead the programmer into error.
-\am{Non so se può servire menzionare che in realta (e se non ricordo male) malloc/new organizzano la memoria in un certo modo. Le allocazioni "pure" in linux avvengono tramite brk e mmap se google non mente (conosco solo il corrispettivo WIndows che è VirtualAlloc per intenderci). Vedi tu se può avere senso, se non serve cancella pure il commento}
+The heap is a memory region used for dynamic allocations, managed explicitly by the programmer using primitives such as \texttt{malloc}/\texttt{free} in C or \texttt{new}/\texttt{delete} in C++. These functions do not normally request a new memory region from the operating system for every individual location, but a user-space memory allocator manages larger regions of memory, dividing them into smaller blocks and keeping track of which portions are currently allocated or available for reuse.
+
+On Linux systems, the allocator can obtain additional virtual memory from the kernel through mechanisms such as \texttt{brk()}, which changes the end of the process data segment, or \texttt{mmap()}, which creates new memory mappings. Large allocations are commonly serviced through \texttt{mmap()} while other allocations may be satisfied from memory already managed by the allocator or from an enlarged process heap. The exact strategy is implementation-dependent and may change according to allocation size and configuration. \cite{gnu-allocator} \cite{malloc-efficiency}
+
+Unlike the stack, therefore, heap allocations do not follow a strict LIFO (Last In, First Out) order: allocated blocks may be released independently and subsequently reused for other object, which is essential for dynamically sized and long-lived data structures, but it also makes object lifetime and memory reuse more difficult to manage correctly, creating the conditions in which errors like UAF may appear.
 
 \subsection{Pointers}\label{pointers}
-In memory-unsafe languages, pointers are \amst{data structures}{non so se li definirei data structures i puntatori, mi verrebbe da dire più "identifier"} that contain \am{Prova giusto a riscrivere questo pezzettino qui. Non direi "che contengono in indirizzo dello heap" ma almeno "Possono contenere"} the address of a specific area of heap memory (to which they "point") and, for example in C, are initialised using the \texttt{malloc} function and freed using the \texttt{free} function. The programmer can use them to perform operations both on the addresses they contain and on the values contained in the memory cells they point to.
+In memory-unsafe languages, pointers are identifiers that may contain the address of a specific memory area (to which they "point") and, for example in C, are initialised using the \texttt{malloc} function and freed using the \texttt{free} function. The programmer can use them to perform operations both on the addresses they contain and on the values contained in the memory cells they point to.
 
 Given their nature, they are one of the main vectors for memory-related attacks. We therefore introduce the concept of a \textbf{dangling pointer}: a pointer, if manipulated incorrectly, may continue to point to an area that is no longer valid, typically because it has been deallocated or has expired. This allows an attacker to read or write content to which they should not have access.
 
@@ -43,7 +46,7 @@ Given their nature, they are one of the main vectors for memory-related attacks.
 
 \noindent Under the right conditions, exploiting a dangling pointer can lead to \textbf{privilege escalation}, i.e. a low-level user gaining administrator privileges, thereby putting sensitive data or, in the most serious cases, entire systems at risk.
 
-\subsection{Reference counting mechanisms}
+\subsection{Reference counting mechanisms}\label{sec:refcount}
 To mitigate the problem of dangling pointers and to avoid placing the responsibility for memory management directly on the programmer, \textbf{reference counting} mechanisms have been introduced. These mechanisms associate each object with a counter that tracks the number of active references to it, so that, provided there are no errors, the relevant memory area is freed when it is no longer in use.
 
 \begin{listing}[H]
@@ -57,65 +60,35 @@ This approach helps to avoid premature deallocations and to coordinate concurren
 
 Early deallocation of an object that is still in use can, in fact, result in \textit{dangling pointers} and use-after-free vulnerabilities, while failure to release references can cause memory leaks and uncontrolled memory consumption. For this reason, reference counting is one of the most delicate mechanisms in memory management within memory-unsafe systems.
 
-\section{Linux and its kernel}
-The kernel is the central component of a Linux operating system and operates with higher privileges than normal programs running in user space. Its main task is to mediate access to hardware resources and to provide applications with a controlled set of services via system calls. This is convenient for the developer, but it also carries some risks: while a bug in a user space program is confined to its process, memory corruption in kernel space can compromise the stability of the entire system or allow operations to be carried out with elevated privileges (the \textit{privilege escalation} that we mentioned in section \ref{pointers}).
+\section{Use-after-free (UAF)}
 
-In addition to this, Linux keeps a highly modular structure, as some functionality can be compiled as a loadable module. However, this flexibility does not provide complete isolation: a loaded module continues to run in kernel space and can access the kernel's internal structures, with the same aforementioned security implications.
+\subsection{What causes a UAF?}\label{sec:what-causes-uaf}
+Every system has flaws and is vulnerable to attacks of varying severity. These flaws, which often stem from logical errors or the incorrect management of the lifecycle of objects in memory, can enable an attacker to compromise the integrity of the system, with different objectives. Some of the most known are \textbf{buffer overflow} (a process uses a memory area that hasn't been allocated to it) or \textbf{double free} (a memory area is deallocated two times corrupting the structures of the memory allocator).
 
-Since its first release in 1991, Linux has evolved from a small-scale project into a platform used on a vast number of servers and devices all around the world, as we can see on the following table which sums up the distribution of Linux-powered machines around the world \cite{bib:fosspost}:
-
-\begin{table}[h]
-    \centering
-    \begin{tabular}{|c|c|}
-        \hline
-        \textbf{Metric} & \textbf{Linux Share} \\\hline
-        Server OS Market (2026 est.) & 51.3\% \\\hline
-        Websites (known OS) & 61.3\% \\\hline
-        Top 1 Million Web Servers & 96.3\% \\\hline
-        Government Data Centers & 64.9\% \\\hline
-        Top500 Supercomputers & 100\% \\
-        \hline
-    \end{tabular}
-\end{table}
-
-\noindent This evolution has been accompanied by the introduction of numerous hardware architectures, new drivers and subsystems, which support a broader quantity of features but bring more security and stability issues on the kernel's side. The interfaces exposed to user space are kept as stable as possible, while the kernel's internal APIs may change significantly between different versions.
-
-These characteristics make automated kernel analysis particularly complex. A detection tool has to deal with code spread across multiple modules that interact in a non-linear manner. Furthermore, some tools require a specific version of the kernel, the compiler or their dependencies, while others necessitate changes to the build system or a full instrumentation phase. The continuous evolution of internal APIs can quickly make unmaintained tools incompatible. The kernel documentation distinguishes between numerous categories of tools, such as:
-\begin{itemize}
-    \item \textit{static analyzers}: code analysis by tracking objects' paths without executing the code. An example is UAFX, which we tested and discuss in section \ref{uafx}
-    \item \textit{sanitizers}: suspect behaviour detection by instrumentating the code through a compiler
-    \item \textit{code coverage tools}: measurement of the quantity of code covered by tests
-    \item \textit{fuzzing tools}: generation of random inputs in order to test different execution paths for the analyzed software 
-    \item \textit{mechanisms for detecting race conditions}: identification of critical code sections where a race condition may happen
-\end{itemize}
-
-\subsection{LLVM}
-Most of the tools we have considered are based on LLVM. It is a modular infrastructure for building compilers and code analysis tools. Its central component is an intermediate representation (generated by a compiler; one of the most used is Clang), commonly referred to as LLVM IR, on which modifications can be made that are independent of the source language and, to some extent, of the target architecture. 
-
-The use of LLVM is significant in the field of security because it allows analyses and transformations to be incorporated directly into the compilation process (e.g. by adding checks that will be executed at runtime). This integration enables more in-depth analyses than simply processing the source code textually, albeit at the expense of the performance of the system being analysed; however, a system compiled with LLM will likely not be made available to a user but will be used solely for analysis purposes.
-
-\section{Overview of vulnerabilities}
-Every system has flaws and is vulnerable to attacks of varying severity. These flaws, which often stem from logical errors or the incorrect management of the lifecycle of objects in memory, can enable an attacker to compromise the integrity of the system, with different objectives. Let's introduce some of the best-known examples relevant to our analysis.
-
-\subsection{Buffer overflow}
-A lack of checks on user input (for example, when entering a string) can cause the process to "overflow" the memory area allocated to it, allowing an attacker to partially or completely overwrite data belonging to other processes or to the system.
-
-\subsection{Use after free (UAF)}
-Incorrect management of the dynamic memory lifecycle can lead to access to portions of memory that have already been deallocated (use-after-free), allowing an attacker to reuse these areas to inject controlled data and influence the program's behaviour via dangling pointers.
+The type of error we're going to focus on is \textbf{use-after-free}. Incorrect management of the dynamic memory lifecycle can lead to access to portions of memory that have already been deallocated, allowing an attacker to reuse these areas to inject controlled data and influence the program's behaviour via dangling pointers.
 
 \begin{listing}[H]
     \captionof{listing}{Simple example of a UAF exploit in C.}
     \cppfile{code/uaf.c}
 \end{listing}
 
-% TODO - approfondire uaf qui
+\noindent A use-after-free vulnerability is fundamentally a violation of the expected lifetime of an object, which passes through three conceptual phases: allocation, usage and deallocation. During the usage phase, one or more parts of the program can hold references to the object and assume that the memory area remains valid. Once the object is deallocated, this isn't true anymore and every reference that could still be used (\textit{dangling pointers}, as explained in section \ref{pointers}) should be removed to avoid producing use-after-free conditions.
 
-\subsection{Double free}
-In the same way as a "use-after-free", multiple deallocation of the same area ("double free") can corrupt the internal structures of the memory allocator, opening the way for manipulation of the heap's state and subsequent arbitrary write operations.
+It's important to distinguish the lifetime of an \textit{object} from the one of a \textit{pointer} referring to it. When the \texttt{free()} function is called, the allocator marks the memory region as available for future use, but it doesn't remove the existing references to it, which could still be used. In large systems, such as the Linux kernel, this distinction is even more important because references to the same object may be interacted with in different execution contexts.
 
-\section{Exploiting UAF and refcount errors}
+As mentioned in section \ref{sec:refcount}, a solution to this problem is counting references for the objects, but an early deallocation can result in a dangling pointer and can therefore be a specific (but not the only) cause of a use-after-free bug (and a potential exploit as a result).
 
-From an exploit perspective, the critical consequence of a reference-counting error is a discrepancy between the logical lifetime of an object and the actual lifetime of the memory area in which it is allocated. The object may be freed while an execution context still holds a pointer to it, for example within a shared data structure, a callback or a local variable belonging to another thread. The retained reference becomes a \textit{dangling pointer}. Subsequent dereferencing does not necessarily result in access to invalid or unmapped memory: in many cases, in fact, as in the CVE we are going to examine, the underlying area remains managed by the allocator's heap and can be reallocated to a new allocation, allowing a lifecycle management error to turn into an exploitable memory corruption condition.
+\subsection{Exploiting UAF and refcount errors}\label{sec:exploiting-uaf-refcount}
+
+From an exploit perspective, the dangling reference resulting from this lifetime inconsistency represents only the initial condition of the attack. The object may have already been freed while an execution context still retains its address. The following example illustrates how one can read a value in a freed memory zone exploiting a dangling pointer.
+
+\clearpage
+\begin{listing}[H]
+    \captionof{listing}{Example of a read operation exploiting a UAF caused by a refcount error.}
+    \cppfile{code/uaf-refcount.c}
+\end{listing}
+
+\noindent In more complex (and realistic) cases, exploitation relies on turning this stale reference into a predictable and controllable interaction with the allocator and with subsequent allocations.
 
 The first stage of an exploit generally involves forcing an incorrect transition in the lifecycle. Depending on the vulnerability, the attacker may need to trigger an error-handling path, repeatedly register and unregister a resource, close an object while it is still in use by another operation, or coordinate multiple concurrent operations. In vulnerabilities relating to reference counting, the key event is often the premature release of the last reference recognised by the system, even though another reachable reference still exists. The attacker must therefore maintain a code path capable of accessing the object after it has been deallocated, while simultaneously causing the counter to reach zero.
 
@@ -142,7 +115,52 @@ A pending reference may also interact directly with the reference counting mecha
     \item Accessing the new contents via the obsolete type
     \item Transforming the resulting behaviour into a useful (usually malicious) memory primitive
 \end{enumerate}
-\noindent Although this is only a generalized explanation of the idea and process behind exploiting this type of vulnerability, as we will see with the specific CVE it usually isn't easy as it seems, due to the need for certain conditions to be met.
+\noindent Although this is only a generalized explanation of the idea and process behind exploiting this type of vulnerability, it usually isn't easy as it seems, due to the need for certain conditions to be met.
+
+\section{Linux and its kernel}
+
+\subsection{The kernel}
+The kernel is the central component of a Linux operating system and operates with higher privileges than normal programs running in user space. Its main task is to mediate access to hardware resources and to provide applications with a controlled set of services via system calls. This is convenient for the developer, but it also carries some risks: while a bug in a user space program is confined to its process, memory corruption in kernel space can compromise the stability of the entire system or allow operations to be carried out with elevated privileges (the \textit{privilege escalation} that we mentioned in section \ref{pointers}).
+
+In addition to this, Linux keeps a highly modular structure, as some functionality can be compiled as a loadable module. However, this flexibility does not provide complete isolation: a loaded module continues to run in kernel space and can access the kernel's internal structures, with the same aforementioned security implications.
+
+Since its first release in 1991, Linux has evolved from a small-scale project into a platform used on a vast number of servers and devices all around the world, as we can see on the following table which sums up the distribution of Linux-powered machines around the world \cite{bib:fosspost}:
+
+\begin{table}[h]
+    \centering
+    \begin{tabular}{|c|c|}
+        \hline
+        \textbf{Metric} & \textbf{Linux Share} \\\hline
+        Server OS Market (2026 est.) & 51.3\% \\\hline
+        Websites (known OS) & 61.3\% \\\hline
+        Top 1 Million Web Servers & 96.3\% \\\hline
+        Government Data Centers & 64.9\% \\\hline
+        Top500 Supercomputers & 100\% \\
+        \hline
+    \end{tabular}
+\end{table}
+
+\noindent This evolution has been accompanied by the introduction of numerous hardware architectures, new drivers and subsystems, which support a broader quantity of features but bring more security and stability issues on the kernel's side. The interfaces exposed to user space are kept as stable as possible, while the kernel's internal APIs may change significantly between different versions.
+
+\subsection{Use-after-free vulnerabilities in the Linux kernel}
+
+Use-after-free vulnerabilities are particularly relevant in the Linux kernel because many kernel objects are dynamically allocated, shared among different subsystems and accessed concurrently by multiple execution contexts (e.g. sockets, network objects, device structures). Their lifetime, as described in section \ref{sec:refcount}, is often managed through mechanisms like reference counting which, in case of wrong manipulation, can produce dangling pointers and subsequent use-after-free exploits.
+
+As stated previously, the consequences of errors like these are generally more severe than in a normal user-space program, since kernel code executes with high privileges. Detecting these vulnerabilities is complicated by the structure of the kernel itself. The allocation, use and release of an object may occur in different context and the relevant sequence of operation is likely not visible within a single control-flow path (this includes the thread concurrency problem seen in section \ref{sec:exploiting-uaf-refcount}). 
+
+These characteristics make automated kernel analysis particularly complex. A detection tool has to deal with code spread across multiple modules that interact in a non-linear manner. Furthermore, some tools require a specific version of the kernel, the compiler or their dependencies, while others necessitate changes to the build system or a full instrumentation phase. The continuous evolution of internal APIs can quickly make unmaintained tools incompatible. The kernel documentation distinguishes between numerous categories of tools, such as:
+\begin{itemize}
+    \item \textit{static analyzers}: code analysis by tracking objects' paths without executing the code. An example is UAFX, which we tested and discuss in section \ref{uafx}
+    \item \textit{sanitizers}: suspect behaviour detection by instrumentating the code through a compiler
+    \item \textit{code coverage tools}: measurement of the quantity of code covered by tests
+    \item \textit{fuzzing tools}: generation of random inputs in order to test different execution paths for the analyzed software 
+    \item \textit{mechanisms for detecting race conditions}: identification of critical code sections where a race condition may happen
+\end{itemize}
+
+\subsubsection{LLVM}
+Most of the tools we have considered are based on LLVM. It is a modular infrastructure for building compilers and code analysis tools. Its central component is an intermediate representation (generated by a compiler; one of the most used is Clang), commonly referred to as LLVM IR, on which modifications can be made that are independent of the source language and, to some extent, of the target architecture. 
+
+The use of LLVM is significant in the field of security because it allows analyses and transformations to be incorporated directly into the compilation process (e.g. by adding checks that will be executed at runtime). This integration enables more in-depth analyses than simply processing the source code textually, albeit at the expense of the performance of the system being analysed; however, a system compiled with LLM will likely not be made available to a user but will be used solely for analysis purposes.
 
 \section{Existing tools for detecting UAF vulnerabilities}
 For all known bugs, there is a wide range of tools described in the academic literature, used either individually or in combination, that serve (or help) to detect them. UAF issues, however, especially when related to reference counting problems, are particularly challenging.
@@ -150,6 +168,7 @@ Due to the unpredictable nature of these bugs, the numerous conditions required 
 
 Below are some examples of tools capable of analyzing code and detecting use-after-free vulnerabilities. Since each vulnerability exploits different weaknesses, we have compiled a list of tools with different purposes and modes of operation to provide a broader range of options in this regard.
 
+\clearpage
 {
     \renewcommand{\arraystretch}{1.5} % Padding verticale
     \begin{table}[H]
@@ -310,8 +329,7 @@ CountDown's workflow can be broken down into three main phases:
     First, it identifies syscalls that effectively change the refcount of any object. It remaps a set of 4-tuples in a new map, where the key is the refcount ID and the value is a set of syscalls and their changes to the refcount ($\delta$), avoiding relations between syscalls from different programs (which can quickly become unrealiable).
     
     Based on the shared refcounts, every relation is reworked in a new one defined as \texttt{RefcntRelation}. The assumption is that, if two syscalls access the same refcount within one execution, they have a stronger relation with respect to triggering more complicated refcount operations. Each syscall set associated with a specific refcount is then split into a set of syscalls pairs. Following that, CountDown creates the syscall relation table, where each unique pair of syscalls has an entry and the value is the number of shared refcounts accessed by both.
-
-    \clearpage
+    
     \begin{center}
         \begin{figure}[h]
             \centering
