@@ -41,7 +41,7 @@ Given their nature, they are one of the main vectors for memory-related attacks.
 
 \begin{listing}[H]
     \captionof{listing}{Example of dangling pointer in C.}
-    \cppfile{code/dangling-pointer.c}
+    \cfile{code/dangling-pointer.c}
 \end{listing}
 
 \noindent Under the right conditions, exploiting a dangling pointer can lead to \textbf{privilege escalation}, i.e. a low-level user gaining administrator privileges, thereby putting sensitive data or, in the most serious cases, entire systems at risk.
@@ -51,7 +51,7 @@ To mitigate the problem of dangling pointers and to avoid placing the responsibi
 
 \begin{listing}[H]
     \captionof{listing}{Simple example of a reference counting mechanism.}
-    \cppfile{code/refcount.c}
+    \cfile{code/refcount.c}
 \end{listing}
 
 \noindent When a new structure gains access to the object, the counter is incremented. Conversely, when the reference is no longer needed, the counter is decremented. When the counter reaches the value \textit{zero}, the system considers the object to be no longer in use and frees up the memory it occupies.
@@ -69,7 +69,7 @@ The type of error we're going to focus on is \textbf{use-after-free}. Incorrect 
 
 \begin{listing}[H]
     \captionof{listing}{Simple example of a UAF exploit in C.}
-    \cppfile{code/uaf.c}
+    \cfile{code/uaf.c}
 \end{listing}
 
 \noindent A use-after-free vulnerability is fundamentally a violation of the expected lifetime of an object, which passes through three conceptual phases: allocation, usage and deallocation. During the usage phase, one or more parts of the program can hold references to the object and assume that the memory area remains valid. Once the object is deallocated, this isn't true anymore and every reference that could still be used (\textit{dangling pointers}, as explained in section \ref{pointers}) should be removed to avoid producing use-after-free conditions.
@@ -85,7 +85,7 @@ From an exploit perspective, the dangling reference resulting from this lifetime
 \clearpage
 \begin{listing}[H]
     \captionof{listing}{Example of a read operation exploiting a UAF caused by a refcount error.}
-    \cppfile{code/uaf-refcount.c}
+    \cfile{code/uaf-refcount.c}
 \end{listing}
 
 \noindent In more complex (and realistic) cases, exploitation relies on turning this stale reference into a predictable and controllable interaction with the allocator and with subsequent allocations.
@@ -168,7 +168,6 @@ Due to the unpredictable nature of these bugs, the numerous conditions required 
 
 Below are some examples of tools capable of analyzing code and detecting use-after-free vulnerabilities. Since each vulnerability exploits different weaknesses, we have compiled a list of tools with different purposes and modes of operation to provide a broader range of options in this regard.
 
-\clearpage
 {
     \renewcommand{\arraystretch}{1.5} % Padding verticale
     \begin{table}[H]

