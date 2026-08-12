@@ -30,7 +30,7 @@ The stack is a data structure organised according to a LIFO (Last In, First Out)
 \subsection{Heap}
 The heap is a memory region used for dynamic allocations, managed explicitly by the programmer using primitives such as \texttt{malloc}/\texttt{free} in C or \texttt{new}/\texttt{delete} in C++. These functions do not normally request a new memory region from the operating system for every individual location, but a user-space memory allocator manages larger regions of memory, dividing them into smaller blocks and keeping track of which portions are currently allocated or available for reuse.
 
-On Linux systems, the allocator can obtain additional virtual memory from the kernel through mechanisms such as \texttt{brk()}, which changes the end of the process data segment, or \texttt{mmap()}, which creates new memory mappings. Large allocations are commonly serviced through \texttt{mmap()} while other allocations may be satisfied from memory already managed by the allocator or from an enlarged process heap. The exact strategy is implementation-dependent and may change according to allocation size and configuration. \cite{gnu-allocator} \cite{malloc-efficiency}
+On Linux systems, the allocator can obtain additional virtual memory from the kernel through mechanisms such as \texttt{brk()}, which changes the end of the process data segment, or \texttt{mmap()}, which creates new memory mappings. Large allocations are commonly serviced through \texttt{mmap()} while other allocations may be satisfied from memory already managed by the allocator or from an enlarged process heap. The exact strategy is implementation-dependent and may change according to allocation size and configuration. \cite{bib:gnu-allocator} \cite{bib:malloc-efficiency}
 
 Unlike the stack, therefore, heap allocations do not follow a strict LIFO (Last In, First Out) order: allocated blocks may be released independently and subsequently reused for other object, which is essential for dynamically sized and long-lived data structures, but it also makes object lifetime and memory reuse more difficult to manage correctly, creating the conditions in which errors like UAF may appear.
 
@@ -175,7 +175,7 @@ Below are some examples of tools capable of analyzing code and detecting use-aft
         \begin{tabular}{|c|c|c|c|}
             \hline
             \textbf{Tool} & \textbf{LLVM-based} & \textbf{Kernel-usable?} & \textbf{Public source?} \\\hline
-            UAFX \cite{bib:ndss-uafx} & Yes & Yes & Yes \\\hline
+            UAFX \cite{bib:uafx} & Yes & Yes & Yes \\\hline
             CountDown \cite{bib:countdown} & Yes & Yes & Yes \\\hline
             Infer \cite{bib:infer} & Yes (+ Clang) & Yes & Yes \\\hline
             Clang Static Analyzer \cite{bib:clang} & Yes & Yes & Yes \\\hline
@@ -202,7 +202,7 @@ Finally, we excluded the tools that would not have worked on the kernel because 
 After considering these factors, the decision was made to choose UAFX and CountDown.
 
 \subsection{UAFX}\label{uafx}
-UAFX is a static analyzer, presented at NDSS 2025 \cite{bib:ndss-uafx}, designed to detect \textit{cross-entry} (non-linear) use-after-free vulnerabilities in the Linux kernel. The term "cross-entry" refers to conditions in which the deallocation and subsequent use of an object occur through different entry points (e.g system calls, callbacks, driver interfaces). In such cases, the link between the deallocation point and the usage point may involve parts distributed across distinct execution paths, making it difficult to detect using analyzers limited to a single function or a single call chain (i.e. where memory allocation, usage, and deallocation occur in a linear pattern). UAFX's approach is based on achieving two main macro-objectives:
+UAFX is a static analyzer, presented at NDSS 2025 \cite{bib:uafx}, designed to detect \textit{cross-entry} (non-linear) use-after-free vulnerabilities in the Linux kernel. The term "cross-entry" refers to conditions in which the deallocation and subsequent use of an object occur through different entry points (e.g system calls, callbacks, driver interfaces). In such cases, the link between the deallocation point and the usage point may involve parts distributed across distinct execution paths, making it difficult to detect using analyzers limited to a single function or a single call chain (i.e. where memory allocation, usage, and deallocation occur in a linear pattern). UAFX's approach is based on achieving two main macro-objectives:
 
 \begin{itemize}
     \item \textbf{Escape-Fetch-based Cross-Entry Alias Analysis}
@@ -262,7 +262,7 @@ Speaking specifically about our case, UAFX may not be able to automatically iden
 A first obstacle could be identifying the entry functions. As described earlier, automatic identification of candidates occurs for functions that have no callers, but this is not the case here because the functions that operate on socket objects are instead called by other functions.
 This could be resolved in the second step of the identification process, namely by manually adding the functions to the set of candidates.
 
-Another, more significant obstacle is the difficulty explicitly described in tracking reference counts (page 9 of the paper \cite{bib:ndss-uafx}, \textit{Reference Count Mechanisms}).
+Another, more significant obstacle is the difficulty explicitly described in tracking reference counts (page 9 of the paper \cite{bib:uafx}, \textit{Reference Count Mechanisms}).
 UAFX intentionally avoids analyzing candidates involving reference counts, which is, in fact, the main cause of CVE-2025-21756, because of the excessive number of false positives that would be generated, in order to maintain high precision (but lower recall).
 Despite this, it would be theoretically possible to extend UAFX with the help of other previouslky mentioned tools (here and in UAFX's paper): LinKRID (page 14), CRCount, and FreeWill (page 15) can, with some modifications, be used together with UAFX to increase accuracy on reference count problems.
 

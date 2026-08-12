@@ -165,7 +165,7 @@ Let's look at every relevant step in the test case. Every involved function will
         exit(EXIT_FAILURE);
     }
 \end{clncode}
-In this step, the “victim” socket for the exploit is created. \texttt{s} is reinitialized with no port, no peer, no bind, and no transport.
+In this step, the "victim" socket for the exploit is created. \texttt{s} is reinitialized with no port, no peer, no bind, and no transport.
 
 We want the \texttt{connect} to fail in a specific way. With this connection attempt, the kernel prepares the socket, selects the transport and attempts to assign it a local port. The 24 ports we set up earlier are used to steer the process along this error path so that the transport is set but the socket remains in the unbound list.
 
@@ -199,7 +199,7 @@ This causes the trasport to be unset and, at the same time, the reference count 
 
 \section{Cause and functions involved}\label{functions_involved}
 
-In order to understand exactly why the bug occurs, we can start by looking at the patch the developers used to fix it. Before the patch (kernel versions until 6.6.78), the vulnerable code looked like this:
+In order to understand exactly why the bug occurs, we can start by looking at the patch the developers applied to fix it. Before the patch \cite{bib:kernel-patch} (kernel versions until 6.6.78 \cite{bib:af-vsock}), the vulnerable code in \texttt{af\_vsock} looked like this:
 
 \begin{clncode}
     void vsock_remove_sock(struct vsock_sock *vsk)
@@ -230,7 +230,7 @@ In the test case, the newly created \texttt{SOCK\_SEQPACKET} socket is initially
 
 The second \texttt{connect()} changes the destination so that a different transport selection is required. During this reassignment, the previous transport is released and the socket is removed through the normal bound-socket removal path, but the socket was never actually moved from the unbound list to one of the regular bound-table buckets. The vulnerable code therefore treats an unbound socket as if it were normally bound and drops a reference that should have been preserved. The subsequent \texttt{bind()} then operates on a socket whose reference count may already be incorrect, exposing the use-after-free condition.
 
-Now that we've covered how bound tables work, we can examine the contents of \texttt{vsock\_remove\_bound}. Since the original function calls a wrapper that contains mutual exclusion instructions and the entire function that contains the actual logic, for simplicity we'll focus directly on the latter.
+Now that we've covered how bound tables work, we can examine the contents of \texttt{vsock\_remove\_bound}. Since the original function calls a wrapper that contains mutual exclusion instructions and the entire function that contains the actual logic, for simplicity we'll focus directly on the latter:
 
 \begin{clncode}
     static void __vsock_remove_bound(struct vsock_sock *vsk)
@@ -240,6 +240,14 @@ Now that we've covered how bound tables work, we can examine the contents of \te
     }
 \end{clncode}
 
-% TODO continuare
+\noindent The \texttt{list\_del\_init} statement removes the socket from the bound table, while the \texttt{sock\_put} function contains the statement responsible for decrementing the reference counter for the current socket and, if necessary, destroying it if the decremented reference was the last one:
 
-\section{Overview of the exploit}
+\begin{clncode}
+    static inline void sock_put(struct sock *sk)
+    {
+    	if (refcount_dec_and_test(&sk->sk_refcnt))
+    		sk_free(sk);
+    }
+\end{clncode}
+
+\noindent This means that, if the socket was not actually unbound, its reference counter was still decremented and the memory was freed, even though a valid reference to it still existed.

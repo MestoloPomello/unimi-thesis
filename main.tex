@@ -8,8 +8,6 @@
 \usepackage{amssymb,amsmath,amsthm}
 \usepackage{graphicx}
 \usepackage{xurl}
-\usepackage{hyperref}
-\usepackage[nameinlink]{cleveref}
 \usepackage{epsfig}
 \usepackage[english]{babel}
 \usepackage{setspace}
@@ -56,8 +54,12 @@
 
 \newminted[cpplncode]{cpp}{fontsize=\small, xleftmargin=10pt, linenos, breaklines, escapeinside=||}
 \newmintedfile[cppfile]{cpp}{fontsize=\small, xleftmargin=10pt, linenos, breaklines, escapeinside=||}
+
 \newminted[clncode]{c}{fontsize=\small, xleftmargin=10pt, linenos, breaklines, escapeinside=||}
 \newmintedfile[cfile]{c}{fontsize=\small, xleftmargin=10pt, linenos, breaklines, escapeinside=||}
+
+\newminted[bashlncode]{bash}{fontsize=\small, xleftmargin=10pt, linenos, breaklines, escapeinside=||}
+\newmintedfile[bashfile]{bash}{fontsize=\small, xleftmargin=10pt, linenos, breaklines, escapeinside=||}
 
 %
 %
@@ -101,12 +103,9 @@
 \input{chapters/introduction}
 \input{chapters/background}
 \input{chapters/cve}
-
-\chapter{Setup and tests with UAFX}
-
-\chapter{Setup and tests with CountDown}
-
-\chapter{Conclusions}
+\input{chapters/uafx}
+\input{chapters/countdown}
+\input{chapters/conclusions}
 
 \input{bibliography}
 
