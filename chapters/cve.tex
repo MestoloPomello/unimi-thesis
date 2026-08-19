@@ -1,12 +1,12 @@
 \chapter{CVE-2025-21756}
 
 \section{Overview}
-CVE-2025-21756 is a use-after-free vulnerability identified in the Linux kernel's AF\_VSOCK subsystem, which is used for communication between hosts and virtual machines. The vulnerability allows a local attacker to gain elevated privileges (up to root) by exploiting incorrect management of the socket object lifecycle within the kernel.
+CVE-2025-21756 \cite{bib:cve-2025-21756} is a use-after-free vulnerability identified in the Linux kernel's AF\_VSOCK \cite{bib:af-vsock} subsystem, which is used for communication between hosts and virtual machines. The vulnerability allows a local attacker to gain elevated privileges (up to root) by exploiting incorrect management of the socket object lifecycle within the kernel.
 
 The problem arises during specific sequences of operations on vsock sockets, leading to the dereferencing of memory structures that have already been freed and, consequently, to kernel memory corruption. Specifically, an attacker could exploit this vulnerability to achieve privilege escalation.
 
 \section{The VSOCK subsystem}\label{vsock_subsystem}
-VSOCK is a component of the Linux kernel that manages communication between a virtual machine (\textit{guest}) and the system hosting it (\textit{host}). It was developed in response to the need to provide a method of communication between the two entities that offers better performance than traditional network interfaces. Unlike TCP/IP sockets, which are based on IP addresses and network protocols, vsock sockets use an addressing model specific to virtualised environments. Communication via vsock utilises a pair of identifiers:
+VSOCK is a component of the Linux kernel that manages communication between a virtual machine (\textit{guest}) and the system hosting it (\textit{host}). It was developed in response to the need to provide a method of communication between the two entities that offers better performance than traditional network interfaces. Unlike TCP/IP \cite{bib:tcp-ip} sockets, which are based on IP addresses and network protocols, vsock sockets use an addressing model specific to virtualised environments. Communication via vsock utilises a pair of identifiers:
 \begin{itemize}
     \item \textbf{CID (Context IDentifier)}: uniquely identifies an endpoint (host or VM)
     \item \textbf{Port}: similar to TCP/UDP ports
@@ -22,11 +22,11 @@ Communication takes place via two transport networks:
 \begin{itemize}
     \item \textbf{G2H (guest-to-host)}: these are executed on the guest and are usually device drivers. We distinguish between three types:
     \begin{itemize}
-        \item \textit{virtio-transport}: typical of KVM/QEMU, it uses virtqueues located within the guest as buffers, but the host also reads from and writes to them.
+        \item \textit{virtio-transport}: typical of KVM \cite{bib:kvm}/QEMU \cite{bib:qemu}, it uses virtqueues located within the guest as buffers, but the host also reads from and writes to them.
 
-        \item \textit{vmci-transport}: VMWare's proprietary for H2G/G2H.
+        \item \textit{vmci-transport}: VMWare's \cite{bib:vmware-disco} proprietary for H2G/G2H.
 
-        \item \textit{hyperv-transport}: based on Hyper-V VMBus, designed specifically for Microsoft environments.
+        \item \textit{hyperv-transport}: based on Hyper-V VMBus \cite{bib:hyperv}, designed specifically for Microsoft environments.
     \end{itemize}
 
     \item \textbf{H2G (host-to-guest)}: these are run on the host and usually provide device emulation for the guest. There are two types:
@@ -74,7 +74,7 @@ The operation can be broken down into the following stages:
 The virtqueue backend (which actually manages the queue on the host) can be \textbf{QEMU}, with full emulation, as in the case under consideration, or \textbf{vhost}: the backend runs within the host kernel (vhost-net/vhost-blk), allowing the driver to communicate directly with the kernel without going through QEMU's user space, thereby drastically reducing latency.
 
 \subsubsection{Internal architecture of VSOCK}
-From an implementation perspective, each vsock socket is represented in the kernel by a data structure (\texttt{struct vsock\_sock}), which extends the generic socket structures (\texttt{struct sock}). These objects are managed via:
+From an implementation perspective, each vsock socket is represented in the kernel by a data structure (\texttt{struct vsock\_sock} \cite{bib:af-vsock-code}), which extends the generic socket structures (\texttt{struct sock} \cite{bib:struct-sock}). These objects are managed via:
 \begin{itemize}
     \item \textbf{status lists}:
     \begin{itemize}
@@ -99,7 +99,7 @@ Typically, a vsock socket goes through the following stages:
 \end{enumerate}
 
 \section{Test case presented by the developers}
-Let's start with a test case provided by the maintainers of the VSOCK module for the Linux kernel, who, after releasing the patch, made it available to allow users to check whether their system is affected by the issue.
+Let's start with a test case \cite{bib:linux-test-case-suite} provided by the maintainers of the VSOCK module for the Linux kernel, who, after releasing the patch, made it available to allow users to check whether their system is affected by the issue.
 
 \begin{listing}[H]
     \captionof{listing}{Test case presented by the developers.}
@@ -199,7 +199,7 @@ This causes the trasport to be unset and, at the same time, the reference count 
 
 \section{Cause and functions involved}\label{functions_involved}
 
-In order to understand exactly why the bug occurs, we can start by looking at the patch the developers applied to fix it. Before the patch \cite{bib:kernel-patch} (kernel versions until 6.6.78 \cite{bib:af-vsock}), the vulnerable code in \texttt{af\_vsock} looked like this:
+In order to understand exactly why the bug occurs, we can start by looking at the patch \cite{bib:kernel-patch} the developers applied to fix it. Before the patch (kernel versions until 6.6.78 \cite{bib:af-vsock-code}), the vulnerable code in \texttt{af\_vsock} looked like this:
 
 \begin{clncode}
     void vsock_remove_sock(struct vsock_sock *vsk)
@@ -222,7 +222,7 @@ In order to understand exactly why the bug occurs, we can start by looking at th
     }
 \end{clncode}
 
-\noindent The maintainers added a simple \texttt{if} that checks if the socket is really "dead" before removing the binding. We can better understand how it works by working backward, starting with the call to the \texttt{vsock\_remove\_bound} function.
+\noindent The maintainers added a simple \texttt{if} that checks if the socket is really "dead" before removing the binding. We can better understand how it works by working backward, starting with the call to the \texttt{vsock\_remove\_bound} \cite{bib:af-vsock-code} function.
 
 Before examining the function itself, we need to explain how the \textbf{bound tables} approach works. There are two global (as all sockets on the system are placed within them) tables, one for \textbf{bound sockets} (sockets that have specified an address that they are responsible for) and one for \textbf{connected sockets} (sockets that have established a connection with another socket). The bound table contains an extra entry for a list of \textbf{unbound sockets}. These tables are managed as \textit{intrusive lists} and are contained directly within the socket structs.
 
@@ -250,4 +250,4 @@ Now that we've covered how bound tables work, we can examine the contents of \te
     }
 \end{clncode}
 
-\noindent This means that, if the socket was not actually unbound, its reference counter was still decremented and the memory was freed, even though a valid reference to it still existed.
+\noindent This means that, if the socket was not actually unbound, its reference counter was still decremented and the memory was freed, even though a valid reference to it still existed. Now that we understand why this vulnerability exists, let's analyze the options available to us with the tools we've considered and how they interact with the affected modules in the kernel version under review.

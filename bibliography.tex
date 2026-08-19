@@ -3,7 +3,7 @@
 %
 \begin{thebibliography}{00}
 
-%%% INTRODUZIONE
+%%% BACKGROUND
 
 \bibitem{bib:gnu-allocator}
 The GNU Allocator
@@ -105,8 +105,6 @@ LLVM: A Compilation Framework for Lifelong Program Analysis \& Transformation
 Clang Static Analyzer
 \url{https://github.com/llvm/llvm-project/blob/main/clang/lib/StaticAnalyzer/README.txt}, 2008
 
-%%% VULN
-
 \bibitem{bib:countdown}
 CountDown: Refcount-guided Fuzzing for Exposing Temporal Memory Errors in Linux Kernel \url{https://dl.acm.org/doi/epdf/10.1145/3658644.3690320}, 2024
 
@@ -118,7 +116,7 @@ Syzkaller: unsupervised coverage-guided kernel fuzzer
 Infer: An Automatic Program Verifier for Memory Safety of C Programs
 \url{https://scispace.com/pdf/infer-an-automatic-program-verifier-for-memory-safety-of-c-1d048xu12f.pdf}, 2011
 
-\bibitem{bib:gcc-fanalyzer}
+\bibitem{bib:gcc}
 GNU Compiler Collection (GCC)
 \url{https://github.com/gcc-mirror/gcc}, 1987
 
@@ -176,12 +174,68 @@ Detecting Kernel Refcount Bugs with Two-Dimensional Consistency Checking
 vsock: Keep the binding until socket destruction, Linux kernel patch
 \url{https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=fcdd2242c0231032fc84e1404315c245ae56322a}, 2025
 
-\bibitem{bib:af-vsock}
-af\_vsock module, Linux kernel code, v6.6.78
-\url{https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/net/vmw_vsock/af_vsock.c?h=v6.6.78}, 2025
-
 \bibitem{bib:z3}
 Z3: an efficient SMT solver
 \url{https://dl.acm.org/doi/10.5555/1792734.1792766}, 2008
+
+%%% VULN
+
+\bibitem{bib:cve-2025-21756}
+CVE-2025-21756 - National Vulnerability Database
+\url{https://nvd.nist.gov/vuln/detail/CVE-2025-21756}, 2025
+
+\bibitem{bib:af-vsock}
+VSOCK: VM $\longleftrightarrow$ host socket with minimal configuration - Presentation at DevConf.CZ 2020
+\url{https://static.sched.com/hosted_files/devconfcz2020a/b1/DevConf.CZ_2020_vsock_v1.1.pdf}
+
+\bibitem{bib:tcp-ip}
+A Protocol for Packet Network Intercommunication
+\url{https://www.cs.princeton.edu/courses/archive/fall06/cos561/papers/cerf74.pdf}, 1974
+
+\bibitem{bib:kvm}
+kvm : the Linux Virtual Machine Monitor
+\url{https://api.semanticscholar.org/CorpusID:2408450}, 2007
+
+\bibitem{bib:qemu}
+QEMU, a Fast and Portable Dynamic Translator
+\url{https://www.usenix.org/conference/2005-usenix-annual-technical-conference/qemu-fast-and-portable-dynamic-translator}, 2005
+
+\bibitem{bib:vmware-disco}
+Disco: Running Commodity Operating Systems on Scalable Multiprocessors - Disco would later become VMWare
+\url{https://pages.cs.wisc.edu/~remzi/Classes/838/Spring2013/Papers/bugnion97disco.pdf}, 1997
+
+\bibitem{bib:hyperv}
+Hyper-V Architecture - Microsoft Learn
+\url{https://learn.microsoft.com/en-us/windows-server/virtualization/hyper-v/architecture}, 2008
+
+\bibitem{bib:af-vsock-code}
+af\_vsock module, Linux kernel code, v6.6.78
+\url{https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/net/vmw_vsock/af_vsock.c?h=v6.6.78}, 2025
+
+\bibitem{bib:linux-test-case-suite}
+CVE-2025-21756 Test Case in Linux Test Project release 20250930
+\url{https://github.com/linux-test-project/ltp/releases/tag/20250930}, 2025
+
+\bibitem{bib:uafx-code}
+ModuleState.cpp in UAFX's GitHub repository
+\url{https://github.com/uafx/uafx/blob/main/llvm_analysis/MainAnalysisPasses/SoundyAliasAnalysis/src/ModuleState.cpp}, 2025
+
+%%% UAFX
+
+\bibitem{bib:smt}
+Satisfiability Modulo Theories
+\url{https://people.eecs.berkeley.edu/~sseshia/pubdir/SMT-BookChapter2e.pdf}, 2009
+
+\bibitem{bib:gllvm}
+gllvm documentation - GitHub
+\url{https://jenniniku.github.io/gllvm/}, 2019
+
+\bibitem{bib:wllvm}
+WLLVM - A wrapper script to build whole-program LLVM bitcode files - GitHub
+\url{https://github.com/travitch/whole-program-llvm}, 2011
+
+\bibitem{bib:syscalls}
+Syscalls in Linux Manual Page
+\url{https://man7.org/linux/man-pages/man2/syscall.2.html}, 2026
 
 \end{thebibliography}

@@ -1,1 +1,7 @@
-\chapter{Setup and tests with CountDown}
+\chapter{CountDown testing: dynamic analysis}
+
+For CountDown, we needed to configure KVM (following the official instructions [TODO cit]) on a Linux machine. To do this, we used a system running Fedora 41. Next, we retrieved the CountDown source code from the official repository [TODO cit] and installed the necessary dependencies. 
+
+We then downloaded the Linux kernel source code from the official repository. Unlike the UAFX setup, however, we used version 6.6, which, like 6.6.75, contained the vulnerability. The reason for this choice was that we wanted to use a version on which CountDown had been tested, as specified in the paper, to avoid issues that might arise from using an untested version.
+
+% TODO continuare
