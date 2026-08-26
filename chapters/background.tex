@@ -185,11 +185,11 @@ The use of LLVM is significant in the field of security because it allows analys
 For all known bugs, there is a wide range of tools described in the academic literature, used either individually or in combination, that serve (or help) to detect them. UAF issues, however, especially when related to reference counting problems, are particularly challenging.
 Due to the unpredictable nature of these bugs, the numerous conditions required to exploit them, and the variety of contexts in which they can occur, identifying them is by no means easy. In addition to the identification process itself, other problems may arise, such as large volumes of false positives that can cause a tool to be inaccurate on its own and require human review to distinguish them from true positives, or the need for extreme computational power to run the tool effectively.
 
-Below are some examples of tools capable of analyzing code and detecting use-after-free vulnerabilities. Since each vulnerability exploits different weaknesses, we have compiled a list of tools with different purposes and modes of operation to provide a broader range of options in this regard.
+In table \ref{table:tools} are some examples of tools capable of analyzing code and detecting use-after-free vulnerabilities. Since each vulnerability exploits different weaknesses, we have compiled a list of tools with different purposes and modes of operation to provide a broader range of options in this regard.
 
 {
     \renewcommand{\arraystretch}{1.5} % Padding verticale
-    \begin{table}[H]
+    \begin{table}[h]
         \small
         \centering
         \begin{tabular}{|c|c|c|c|c|}
@@ -213,6 +213,8 @@ Below are some examples of tools capable of analyzing code and detecting use-aft
             Goshawk \cite{bib:goshawk} & Yes & Yes & Yes & No \\\hline
             CID \cite{bib:cid} & Yes & Yes & No & Yes \\\hline
         \end{tabular}
+        \caption{Complete list of tools that we have considered for this study.}
+        \label{table:tools}
     \end{table}
 }
 

@@ -1,7 +1,181 @@
 \chapter{CountDown testing: dynamic analysis}
 
-For CountDown, we needed to configure KVM (following the official instructions [TODO cit]) on a Linux machine. To do this, we used a system running Fedora 41. Next, we retrieved the CountDown source code from the official repository [TODO cit] and installed the necessary dependencies. 
+After testing UAFX, we decided to conduct a test with CountDown to compare the use of a dynamic analyzer (a fuzzer like CountDown) with that of a static analyzer (UAFX).
 
-We then downloaded the Linux kernel source code from the official repository. Unlike the UAFX setup, however, we used version 6.6, which, like 6.6.75, contained the vulnerability. The reason for this choice was that we wanted to use a version on which CountDown had been tested, as specified in the paper, to avoid issues that might arise from using an untested version.
+We started by configuring KVM (following the official instructions \cite{bib:kvm-install}) on a Linux machine. To do this, we used a system running Fedora 41. Next, we retrieved the CountDown source code from the official repository \cite{bib:countdown-repo} and installed the necessary dependencies. 
 
-% TODO continuare
+We then downloaded the Linux kernel source code from the official repository. Unlike the UAFX setup, however, we used version 6.6, which, like 6.6.75, was impacted by the vulnerability. The reason for this choice was that we wanted to use a version on which CountDown had been tested, as specified in the paper, to avoid issues that might arise from using an untested version.
+
+Once the kernel source was downloaded, we applied the CountDown-specific patch to the kernel source tree. This patch instruments the kernel's reference counting operations (\texttt{kref\_get} and \texttt{kref\_put}) to allow CountDown to monitor refcount changes at runtime and detect anomalies (in our case, increments on a zero refcount, which are indicative of use-after-free conditions).
+
+\begin{bashlncode}
+git apply ../kernel_compile/kernel.patch
+\end{bashlncode}
+
+\noindent We then configured the kernel using the configuration file provided by CountDown, which enables the options required by the fuzzer's core (Syzkaller). Some examples that can be found in Syzkaller's documentation \cite{bib:syzkaller-config} are \texttt{CONFIG\_KCOV} for coverage collection and \texttt{CONFIG\_KASAN} for memory error detection.
+
+\begin{bashlncode}
+cp ../kernel_compile/.config ./
+make olddefconfig
+\end{bashlncode}
+
+\noindent During the configuration step, we were prompted for a small number of options not present in the provided configuration file. Specifically, we were asked to choose:
+\begin{itemize}
+    \item a stack variable initialization policy, for which we selected \texttt{INIT\_STACK\_NONE} \cite{bib:config-init-stack-none} (no automatic initialization) to avoid masking memory bugs;
+
+    \item about enabling heap zeroing on allocation (\texttt{INIT\_ON\_ALLOC\_DEFAULT\_ON}) to improve determinism in memory behavior \cite{bib:config-init-on-alloc-default-on};
+
+    \item about disabling heap zeroing on free (\texttt{INIT\_ON\_FREE\_DEFAULT\_ON}) \cite{bib:config-init-on-free-default-on} to preserve the stale memory content that KASAN relies on to detect use-after-free accesses.
+\end{itemize}
+We then compiled the kernel:
+
+\begin{bashlncode}
+make CC="gcc -std=gnu11" HOSTCC="gcc -std=gnu11" \
+     KBUILD_CFLAGS="-std=gnu11" KBUILD_AFLAGS="-std=gnu11" \
+     -j$(nproc)
+\end{bashlncode}
+
+\noindent The \texttt{-std=gnu11} flag was necessary due to a compatibility issue between the kernel 6.6 codebase and GCC 15, the version available on our Fedora system: GCC 15 defaults to the C23 standard, in which \texttt{bool} and \texttt{false} are reserved keywords, causing compilation errors in kernel headers that redefine them.
+
+After successfully compiling the kernel, we proceeded to build a Debian-based disk image using the script provided in the CountDown repository:
+
+\begin{bashlncode}
+cd ../image
+chmod +x ./create-image.sh
+./create-image.sh
+\end{bashlncode}
+
+\noindent This script uses \texttt{debootstrap} \cite{bib:debootstrap} (a tool used to install a base Debian system into a target directory on an already running Linux system) to create a minimal Debian (Bookworm) root filesystem, configures SSH access with a generated key pair, and produces a raw disk image suitable for use with QEMU.
+
+We then compiled CountDown itself:
+
+\begin{bashlncode}
+cd ../countdown_fuzzer
+make
+\end{bashlncode}
+
+\noindent After that, we configured the fuzzer by editing the \texttt{cd\_cfg} file, specifying the paths to the compiled kernel, disk image, and SSH key, as well as the virtual machine parameters: 6 parallel VM instances, 2 virtual CPUs each, and 2048 MB of RAM per instance, for a total of 12 vCPUs and 12 GB of RAM allocated to the fuzzer. This was the final configuration, but not the only one. In fact, to arrive at this one, we made several attempts and based our decision on the system's performance and capabilities while the fuzzer was running. At this point, the workflow splits into two different approaches, described below.
+
+\section{Tests without starting corpus}
+
+For the first test, we ran CountDown as configured above, without any further changes:
+
+\begin{bashlncode}
+./bin/syz-manager -config ./cd_cfg
+\end{bashlncode}
+
+\noindent Upon startup, \texttt{syz-manager} loads the corpus, starts serving an HTTP dashboard on \texttt{http://127.0.0.1:56741} for real-time monitoring and boots the configured virtual machine instances. Once the guest VMs are running and connected, the fuzzer begins executing test programs and collecting coverage and signal data, as shown in the following example output:
+
+\begin{bashlncode}
+2026/05/12 16:33:34 machine check:
+2026/05/12 16:33:34 syscalls               : 3699/4372
+2026/05/12 16:33:34 code coverage           : enabled
+2026/05/12 16:33:34 comparison tracing      : enabled
+2026/05/12 16:33:34 fault injection         : enabled
+2026/05/12 16:33:34 leak checking           : CONFIG_DEBUG_KMEMLEAK is not enabled
+\end{bashlncode}
+
+\noindent The \texttt{machine check} output confirms that the key fuzzing features are active: code coverage collection via \texttt{CONFIG\_KCOV}, comparison tracing [TODO ref] and fault injection [TODO ref]. The absence of \texttt{CONFIG\_DEBUG\_KMEMLEAK} [TODO ref] is not critical for our purposes, as KASAN [TODO ref] is sufficient to detect use-after-free conditions.
+
+In this first test, we ran CountDown without providing any seed corpus, allowing the fuzzer to operate in its default mode: generating and mutating syscall sequences autonomously, guided solely by coverage feedback. This approach reflects the typical black-box fuzzing scenario, where no prior knowledge of the vulnerability is assumed. We decided to try it this way to see if the bug could be detected without manual intervention. Despite running the fuzzer for several days, CountDown did not produce any crash report attributable to CVE-2025-21756, as we can see in figure \ref{fig:countdown-report-1}. During the tests, the \texttt{crashes/} directory in the workdir remained either empty or contained only unrelated kernel warnings. The kref history files (\texttt{kref-relation-cross-history} and \texttt{kref-refcnt-change-cross-history}) remained empty, indicating that the refcount-guided instrumentation did not observe any anomalous reference counting behavior along the explored paths.
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[scale=.4]{images/countdown-report-1.png}
+    \caption{Report of the first unguided test with CountDown.}
+    \label{fig:countdown-report-1}
+\end{figure}
+
+\noindent This result is consistent with the nature of the vulnerability: the syscall sequence required to trigger CVE-2025-21756 is highly specific, involving a precise ordering of \texttt{socket}, \texttt{bind}, and \texttt{connect} calls with particular CID values. Without guidance, the probability of a random fuzzer generating this exact sequence is extremely low, especially considering our performance capabilities.
+
+\section{Tests with starting corpus}
+
+To improve the chances of triggering the vulnerability, we adopted a guided fuzzing approach by providing CountDown with a seed corpus, a collection of syscall programs that the fuzzer uses as starting points for mutation: rather than generating programs from scratch, the fuzzer mutates and recombines existing seeds, exploring the neighborhood of the provided sequences in the program space. This mechanism allowed us to encode prior knowledge about a vulnerability directly into the fuzzing process, reducing the search space.
+
+The seed we provided encodes the syscall sequence known to trigger CVE-2025-21756, based on the analysis described in chapter \ref{chapter:cve} and on the test case published by the kernel maintainers alongside the patch \cite{bib:kernel-patch}. We translated this sequence into Syzkaller's typed syscall format, which uses resource-aware types (e.g. \texttt{socket\$vsock\_stream}) rather than raw syscall numbers, allowing the fuzzer to mutate arguments in a semantically meaningful way:
+
+\begin{bashlncode}
+r0 = socket$vsock_stream(0x28, 0x1, 0x0)
+bind$vsock_stream(r0, &(0x7f0000000000)={0x28, 0x0, 0x1, 0x0}, 0x10)
+r1 = socket$vsock_stream(0x28, 0x1, 0x0)
+connect$vsock_stream(r1, &(0x7f0000000300)={0x28, 0x0, 0x1, 0x4}, 0x10)
+connect$vsock_stream(r1, &(0x7f0000000400)={0x28, 0x0, 0x2a, 0x5}, 0x10)
+bind$vsock_stream(r1, &(0x7f0000000500)={0x28, 0x0, 0x1, 0xffffffff}, 0x10)
+\end{bashlncode}
+
+\noindent This sequence reflects the vulnerability trigger explained in section \ref{sec:test-case}: the first \texttt{connect} to \texttt{VMADDR\_CID\_LOCAL} sets the transport and places the socket in the unbound list; the second \texttt{connect} to a non-existing CID (42) unsets the transport and incorrectly decrements the reference counter; the subsequent \texttt{bind} operates on the freed object, triggering the UAF.
+
+The seed was imported into the corpus using the \texttt{syz-db} tool provided by syzkaller:
+
+\begin{bashlncode}
+./bin/syz-db pack /tmp/vsock_seed /tmp/vsock_seed.db
+./bin/syz-db merge workdir/corpus /tmp/vsock_seed.db
+\end{bashlncode}
+
+\noindent We also explicitly restricted the fuzzer to vsock-related syscalls via the \texttt{enable\_syscalls} field in the configuration file, so that the mutation process would remain focused on the relevant code paths rather than dispersing coverage across unrelated kernel subsystems:
+
+\begin{bashlncode}
+"enable_syscalls": [
+    "socket$vsock_stream",
+    "bind$vsock_stream",
+    "connect$vsock_stream",
+    "socket$vsock_dgram",
+    "bind$vsock_dgram",
+    "connect$vsock_dgram",
+    "accept4$vsock_stream",
+    "getsockname",
+    "close"
+]
+\end{bashlncode}
+
+\noindent However, this does not guarantee that CountDown will follow the same steps as the test case, but only that it will use the specified system calls as a starting point for the scan which, as can be seen in the example in the figure \ref{fig:countdown-coverage}, were used to construct various paths.
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[scale=.4]{images/countdown-coverage.png}
+    \caption{CountDown coverage during one of the tests.}
+    \label{fig:countdown-coverage}
+\end{figure}
+
+\noindent One important aspect worth mentioning regarding how the corpus works is the incremental construction of the set of followed paths. As Syzkaller (and tools derived from it, such as CountDown) follows the paths, it saves them as a starting point so that, on the next run, it can resume from where it left off. This has allowed us to divide the test execution into multiple steps without losing what has already been scanned and, most importantly, without repeating the same paths multiple times, thereby saving time. 
+
+We can further illustrate how it works with the figure \ref{fig:countdown-coverage-table}, which shows the per-system-call coverage reported by CountDown. For each enabled syscall, the \textit{Inputs} column indicates the number of inputs stored in the corpus that exercise that syscall, while the \textit{Coverage} column reports the amount of kernel code coverage reached through those inputs. As the fuzzing process progresses and new executions reach previously unexplored code, the corresponding inputs are added to the corpus. 
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[scale=.4]{images/countdown-coverage-table.png}
+    \caption{CountDown coverage table during one of the tests.}
+    \label{fig:countdown-coverage-table}
+\end{figure}
+
+\noindent Figure \ref{fig:countdown-running-table} shows an example of one of the executions launched during our tests. In this particular run, the corpus contains 475 retained inputs and the fuzzer reached an overall coverage value of 9935 while exercising six enabled system calls. During the campaign, more than 1.7 million test executions were performed and 844 new inputs were identified, while no crashes or distinct crash types were detected. Among the reported statistics, the most relevant are:
+\begin{itemize}
+    \item \texttt{uptime}: the elapsed time since the current CountDown instance was started;
+    
+    \item \texttt{fuzzing}: the cumulative amount of time spent performing fuzzing operations;
+    
+    \item \texttt{corpus}: the number of inputs currently retained in the corpus;
+    
+    \item \texttt{signal}: the amount of execution feedback collected and used to identify interesting inputs;
+    
+    \item \texttt{coverage}: the amount of kernel code reached by the generated executions;
+    
+    \item \texttt{syscalls}: the number of system calls enabled for the fuzzing campaign;
+    
+    \item \texttt{new inputs}: the number of newly discovered inputs considered interesting enough to be added during the execution;
+    
+    \item \texttt{exec total}: the total number of test-case executions performed;
+    
+    \item \texttt{crashes} and \texttt{crash types}: respectively, the number of detected crashes and the number of distinct crash classes;
+    
+    \item \texttt{vm restarts}: the number of times the virtual machines used by the fuzzing environment were restarted.
+\end{itemize}
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[scale=.5]{images/countdown-running-table.png}
+    \caption{CountDown running table during one of the tests.}
+    \label{fig:countdown-running-table}
+\end{figure}
+
+\noindent Despite running the fuzzer for several additional days with this guided configuration, CountDown didn't produce a crash report attributable to the CVE-2025-21756. The kref history files also remained empty, confirming that the refcount instrumentation did not intercept any anomalous behavior. This outcome suggests that, even with our targeted seed, the fuzzer was unable to find the precise conditions required to trigger the vulnerability (at least in our time window and with our performance limits), a finding that itself constitutes a meaningful result, as it highlights a limitation of coverage-guided fuzzing when applied to vulnerabilities that depend on subtle interactions between specific syscall arguments and kernel state.

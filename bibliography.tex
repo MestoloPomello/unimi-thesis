@@ -188,9 +188,10 @@ CVE-2025-21756 - National Vulnerability Database
 VSOCK: VM $\longleftrightarrow$ host socket with minimal configuration - Presentation at DevConf.CZ 2020
 \url{https://static.sched.com/hosted_files/devconfcz2020a/b1/DevConf.CZ_2020_vsock_v1.1.pdf}
 
-\bibitem{bib:tcp-ip}
-A Protocol for Packet Network Intercommunication
-\url{https://www.cs.princeton.edu/courses/archive/fall06/cos561/papers/cerf74.pdf}, 1974
+% Should not be needed
+%\bibitem{bib:tcp-ip}
+%A Protocol for Packet Network Intercommunication
+%\url{https://www.cs.princeton.edu/courses/archive/fall06/cos561/papers/cerf74.pdf}, 1974
 
 \bibitem{bib:kvm}
 kvm : the Linux Virtual Machine Monitor
@@ -208,6 +209,18 @@ Disco: Running Commodity Operating Systems on Scalable Multiprocessors - Disco w
 Hyper-V Architecture - Microsoft Learn
 \url{https://learn.microsoft.com/en-us/windows-server/virtualization/hyper-v/architecture}, 2008
 
+\bibitem{bib:packed-virtqueue}
+Packed virtqueue: How to reduce overhead with virtio
+\url{https://www.redhat.com/en/blog/packed-virtqueue-how-reduce-overhead-virtio}, 2020
+
+\bibitem{bib:vmware-esxi}
+VMWare ESXi docs on Broadcom Techdocs
+\url{https://techdocs.broadcom.com/us/en/vmware-cis/vsphere/vsphere/8-0.html}, 2026
+
+\bibitem{bib:xen-project-architecture}
+Introduction to Xen Project Architecture
+\url{https://wiki.xenproject.org/wiki/Xen_Project_Software_Overview#Introduction_to_Xen_Project_Architecture}, 2026
+
 \bibitem{bib:af-vsock-code}
 af\_vsock module, Linux kernel code, v6.6.78
 \url{https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/net/vmw_vsock/af_vsock.c?h=v6.6.78}, 2025
@@ -215,6 +228,10 @@ af\_vsock module, Linux kernel code, v6.6.78
 \bibitem{bib:linux-test-case-suite}
 CVE-2025-21756 Test Case in Linux Test Project release 20250930
 \url{https://github.com/linux-test-project/ltp/releases/tag/20250930}, 2025
+
+\bibitem{bib:af-vsock-max-retries}
+af\_vsock module, Linux kernel code, v6.6.78, line 167
+\url{https://elixir.bootlin.com/linux/v6.6.78/source/net/vmw_vsock/af_vsock.c#L167}, 2025
 
 \bibitem{bib:uafx-code}
 ModuleState.cpp in UAFX's GitHub repository
@@ -237,5 +254,35 @@ WLLVM - A wrapper script to build whole-program LLVM bitcode files - GitHub
 \bibitem{bib:syscalls}
 Syscalls in Linux Manual Page
 \url{https://man7.org/linux/man-pages/man2/syscall.2.html}, 2026
+
+%%% COUNTDOWN
+
+\bibitem{bib:kvm-install}
+Virtualization – Getting Started (Fedora)
+\url{https://docs.fedoraproject.org/en-US/quick-docs/virtualization-getting-started/}, 2026
+
+\bibitem{bib:countdown-repo}
+CountDown repository on GitHub
+\url{https://github.com/psu-security-universe/countdown}, 2024
+
+\bibitem{bib:syzkaller-config}
+Linux kernel configs on Syzkaller's GitHub repository
+\url{https://github.com/google/syzkaller/blob/master/docs/linux/kernel_configs.md}, 2026
+
+\bibitem{bib:config-init-stack-none}
+CONFIG\_INIT\_STACK\_NONE: no automatic stack variable initialization (weakest)
+\url{https://cateee.net/lkddb/web-lkddb/INIT_STACK_NONE.html}, 2026
+
+\bibitem{bib:config-init-on-alloc-default-on}
+CONFIG\_INIT\_ON\_ALLOC\_DEFAULT\_ON: Enable heap memory zeroing on allocation by default
+\url{https://cateee.net/lkddb/web-lkddb/INIT_ON_ALLOC_DEFAULT_ON.html}, 2026
+
+\bibitem{bib:config-init-on-free-default-on}
+CONFIG\_INIT\_ON\_FREE\_DEFAULT\_ON: Enable heap memory zeroing on free by default
+\url{https://cateee.net/lkddb/web-lkddb/INIT_ON_FREE_DEFAULT_ON.html}, 2026
+
+\bibitem{bib:debootstrap}
+Debootstrap documentation on Debian Wiki
+\url{https://wiki.debian.org/Debootstrap}, 2026
 
 \end{thebibliography}
