@@ -1,0 +1,534 @@
+% ===== INTRODUZIONE ===== %
+
+@misc{bib:google-memory-safety,
+  author = {Alex Rebert and Christoph Kern},
+  title = {Secure by Design: Google's Perspective on Memory Safety},
+  year = {2024},
+  url = {https://research.google/pubs/secure-by-design-googles-perspective-on-memory-safety}
+}
+
+@article{bib:memory-errors-survey,
+  author = {Oscar Llorente-Vazquez and Igor Santos-Grueiro and Iker Pastor-Lopez and Pablo Garcia Bringas},
+  title = {Detection, Exploitation and Mitigation of Memory Errors},
+  journal = {Logic Journal of the IGPL},
+  volume = {32},
+  number = {2},
+  pages = {281--292},
+  year = {2024},
+  doi = {10.1093/jigpal/jzae008},
+  url = {https://doi.org/10.1093/jigpal/jzae008}
+}
+
+@misc{bib:microsoft-memory-safety,
+  author = {{Microsoft Security Response Center}},
+  title = {A Proactive Approach to More Secure Code},
+  year = {2019},
+  url = {https://www.microsoft.com/en-us/msrc/blog/2019/07/a-proactive-approach-to-more-secure-code/}
+}
+
+@misc{bib:linux-kernel-refcounting,
+  author = {{The Linux Kernel Developers}},
+  title = {Linux Kernel Coding Style},
+  year = {2026},
+  url = {https://www.kernel.org/doc/html/latest/process/coding-style.html},
+  note = {Section 11: Data structures}
+}
+
+@misc{bib:linux-kernel-kref,
+  author = {Corey Minyard and Thomas Hellstrom},
+  title = {Adding Reference Counters (krefs) to Kernel Objects},
+  year = {2026},
+  howpublished = {The Linux Kernel Documentation},
+  url = {https://www.kernel.org/doc/html/latest/core-api/kref.html}
+}
+
+@misc{bib:use-after-free,
+  author = {{The MITRE Corporation}},
+  title = {CWE-416: Use After Free},
+  year = {2006},
+  url = {https://cwe.mitre.org/data/definitions/416.html}
+}
+
+@misc{bib:cve-2025-21756,
+  author = {{National Institute of Standards and Technology}},
+  title = {CVE-2025-21756 - National Vulnerability Database},
+  year = {2025},
+  url = {https://nvd.nist.gov/vuln/detail/CVE-2025-21756}
+}
+
+@misc{bib:af-vsock,
+  author = {Stefano Garzarella},
+  title = {VSOCK: VM $\longleftrightarrow$ host socket with minimal configuration - Presentation at DevConf.CZ 2020},
+  year = {2020},
+  url = {https://static.sched.com/hosted_files/devconfcz2020a/b1/DevConf.CZ_2020_vsock_v1.1.pdf}
+}
+
+@misc{bib:countdown,
+  author = {Shuangpeng Bai and Zhechang Zhang and Hong Hu},
+  title = {CountDown: Refcount-guided Fuzzing for Exposing Temporal Memory Errors in Linux Kernel},
+  year = {2024},
+  url = {https://dl.acm.org/doi/epdf/10.1145/3658644.3690320}
+}
+
+@misc{bib:uafx,
+  author = {Hang Zhang and Jangha Kim and Chuhong Yuan and Zhiyun Qian and Taesoo Kim},
+  title = {Statically Discover Cross-Entry Use-After-Free Vulnerabilities in the Linux Kernel},
+  year = {2025},
+  url = {https://www.ndss-symposium.org/wp-content/uploads/2025-559-paper.pdf}
+}
+
+@misc{bib:llvm,
+  author = {Chris Lattner and Vikram Adve},
+  title = {LLVM: A Compilation Framework for Lifelong Program Analysis \& Transformation},
+  year = {2004},
+  url = {https://dl.acm.org/doi/10.5555/977395.977673}
+}
+
+% ===== BACKGROUND =====
+
+@misc{bib:gnu-allocator,
+  author = {{GNU Project}},
+  title = {The GNU Allocator},
+  year = {2026},
+  url = {https://sourceware.org/glibc/manual/2.27/html_node/The-GNU-Allocator.html}
+}
+
+@misc{bib:malloc-efficiency,
+  author = {{GNU Project}},
+  title = {Efficiency Considerations for {malloc}},
+  year = {2026},
+  url = {https://sourceware.org/glibc/manual/2.23/html_node/Efficiency-and-Malloc.html}
+}
+
+@misc{bib:dangling-pointer,
+  author = {Wenzhe Zhang},
+  title = {Efficient detection of dangling pointer error for C/C++ programs},
+  year = {2017},
+  url = {https://www.researchgate.net/publication/319596347_Efficient_detection_of_dangling_pointer_error_for_CC_programs}
+}
+
+@misc{bib:privilege-escalation,
+  author = {Niels Provos and Markus Friedl and Peter Honeyman},
+  title = {Preventing privilege escalation},
+  year = {2003},
+  url = {https://www.academia.edu/1960780/Preventing_privilege_escalation}
+}
+
+@misc{bib:refcount,
+  author = {George E. Collins},
+  title = {A method for overlapping and erasure of lists},
+  year = {1960},
+  url = {https://dl.acm.org/doi/10.1145/367487.367501}
+}
+
+@misc{bib:bof-smashing-stack,
+  author = {Aleph One},
+  title = {Smashing The Stack For Fun And Profit},
+  year = {1996},
+  url = {https://www.andrew.cmu.edu/course/18-330/2025f/reading/One_1996_Smashing%20The%20Stack%20For%20Fun%20And%20Profit.pdf}
+}
+
+@misc{bib:double-free,
+  author = {Peter Breuer and Simon Pickin and María Mercedes Larrondo Petrie},
+  title = {Detecting deadlock, double-free and other abuses in a million lines of Linux kernel source},
+  year = {2006},
+  url = {https://www.academia.edu/1413564/Detecting_deadlock_double_free_and_other_abuses_in_a_million_lines_of_linux_kernel_source}
+}
+
+@misc{bib:exploit-cve-2021-0920,
+  author = {Xingyu Jin},
+  title = {The quantum state of Linux kernel garbage collection CVE-2021-0920 (Part I)},
+  year = {2022},
+  url = {https://projectzero.google/2022/08/the-quantum-state-of-linux-kernel.html}
+}
+
+@misc{bib:exploit-cve-2025-21756,
+  author = {Michael Hoefler},
+  title = {Linux Kernel Exploitation - CVE-2025-21756: Attack of the Vsock},
+  year = {2025},
+  url = {https://hoefler.dev/articles/vsock.html}
+}
+
+@misc{bib:heap-grooming,
+  author = {Alexander Sotirov},
+  title = {Heap Feng Shui in Javascript},
+  year = {2007},
+  url = {https://blackhat.com/presentations/bh-usa-07/Sotirov/Whitepaper/bh-usa-07-sotirov-WP.pdf}
+}
+
+@misc{bib:aslr,
+  author = {Hovav Shacham and Matthew Page and Ben Pfaff and Eu-Jin Goh and Nagendra Modadugu and Dan Boneh},
+  title = {On the Effectiveness of Address-Space Randomization},
+  year = {2004},
+  url = {https://www.andrew.cmu.edu/course/18-330/2025f/reading/Shacham_2004_ASLR_Effectiveness.pdf}
+}
+
+@misc{bib:cfi,
+  author = {Martín Abadi and Mihai Budiu and Úlfar Erlingsson and Jay Ligatti},
+  title = {Control-flow integrity principles, implementations, and applications},
+  year = {2009},
+  url = {https://dl.acm.org/doi/10.1145/1609956.1609960}
+}
+
+@misc{bib:fosspost,
+  author = {Audrey},
+  title = {Linux Market Share Statistics 2026: Desktop, Server and Enterprise Adoption Trends},
+  year = {2026},
+  url = {https://fosspost.org/linux-market-share-statistics/}
+}
+
+@misc{bib:windows-kernel-object,
+  author = {{Microsoft}},
+  title = {Kernel Object in Microsoft Windows Docs},
+  year = {2026},
+  url = {https://learn.microsoft.com/en-us/windows/win32/sysinfo/kernel-objects}
+}
+
+@misc{bib:sched.h,
+  author = {{Linux kernel developers}},
+  title = {sched.h in Linux Kernel},
+  year = {2026},
+  url = {https://elixir.bootlin.com/linux/v7.1.8/source/include/linux/sched.h}
+}
+
+@misc{bib:struct-socket,
+  author = {{Linux kernel developers}},
+  title = {struct socket in Linux Kernel},
+  year = {2026},
+  url = {https://elixir.bootlin.com/linux/v7.1.8/source/include/linux/net.h#L127}
+}
+
+@misc{bib:struct-sock,
+  author = {{Linux kernel developers}},
+  title = {struct sock in Linux Kernel},
+  year = {2026},
+  url = {https://elixir.bootlin.com/linux/v7.1.8/source/include/net/sock.h#L244}
+}
+
+@misc{bib:struct-inode,
+  author = {{Linux kernel developers}},
+  title = {struct inode in Linux Kernel},
+  year = {2026},
+  url = {https://elixir.bootlin.com/linux/v7.1.8/source/include/linux/fs.h#L767}
+}
+
+@misc{bib:struct-sk-buff,
+  author = {{Linux kernel developers}},
+  title = {struct sk\_buff in Linux Kernel},
+  year = {2026},
+  url = {https://elixir.bootlin.com/linux/v7.1.8/source/include/linux/skbuff.h#L775}
+}
+
+@misc{bib:slab-allocator,
+  author = {Jeff Bonwick},
+  title = {The Slab Allocator: An Object-Caching Kernel Memory Allocator},
+  year = {1994},
+  url = {https://people.eecs.berkeley.edu/~kubitron/courses/cs194-24-S14/hand-outs/bonwick_slab.pdf}
+}
+
+@misc{bib:slub,
+  author = {Jonathan Corbet},
+  title = {The SLUB allocator},
+  year = {2007},
+  url = {https://lwn.net/Articles/229984/}
+}
+
+@misc{bib:clang,
+  author = {{LLVM Project}},
+  title = {Clang Static Analyzer},
+  year = {2008},
+  url = {https://github.com/llvm/llvm-project/blob/main/clang/lib/StaticAnalyzer/README.txt}
+}
+
+@misc{bib:syzkaller,
+  author = {{syzkaller project}},
+  title = {Syzkaller: unsupervised coverage-guided kernel fuzzer},
+  year = {2015},
+  url = {https://github.com/google/syzkaller/blob/master/docs/internals.md}
+}
+
+@misc{bib:infer,
+  author = {Cristiano Calcagno and Dino Distefano},
+  title = {Infer: An Automatic Program Verifier for Memory Safety of C Programs},
+  year = {2011},
+  url = {https://scispace.com/pdf/infer-an-automatic-program-verifier-for-memory-safety-of-c-1d048xu12f.pdf}
+}
+
+@misc{bib:gcc,
+  author = {{GNU Project}},
+  title = {GNU Compiler Collection (GCC)},
+  year = {1987},
+  url = {https://github.com/gcc-mirror/gcc}
+}
+
+@misc{bib:cred,
+  author = {Hua Yan and Yulei Sui and Shiping Chen and Jingling Xue},
+  title = {Spatio-Temporal Context Reduction: A Pointer-Analysis-BasedStatic Approach for Detecting Use-After-Free Vulnerabilities},
+  year = {2018},
+  url = {https://dl.acm.org/doi/epdf/10.1145/3180155.3180178}
+}
+
+@misc{bib:cppcheck,
+  author = {{Cppcheck project}},
+  title = {Cppcheck: static analysis of C/C++ code},
+  year = {2007},
+  url = {https://github.com/cppcheck-opensource/cppcheck}
+}
+
+@misc{bib:svf,
+  author = {{SVF Project}},
+  title = {SVF: Static Value-Flow Analysis Framework for Source Code},
+  year = {2016},
+  url = {https://github.com/SVF-tools/SVF}
+}
+
+@misc{bib:freewill,
+  author = {Liang He and Hong Hu and Purui Su and Yan Cai and Zhenkai Liang},
+  title = {FreeWill: Automatically Diagnosing Use-after-free Bugs via Reference Miscounting Detection on Binaries},
+  year = {2022},
+  url = {https://www.usenix.org/system/files/sec22-he-liang.pdf}
+}
+
+@misc{bib:linkrid,
+  author = {Jian Liu and Lin Yi and Weiteng Chen and Chengyu Song and Zhiyun Qian and Qiuping Yi},
+  title = {LinKRID: Vetting Imbalance Reference Counting in Linux kernel with Symbolic Execution},
+  year = {2022},
+  url = {https://www.usenix.org/system/files/sec22-liu-jian.pdf}
+}
+
+@misc{bib:crcount,
+  author = {Jangseop Shin and Donghyun Kwon and Jiwon Seo and Yeongpil Cho and Yunheung Paek},
+  title = {CRCount: Pointer Invalidation with Reference Counting to Mitigate Use-after-free in Legacy C/C++},
+  year = {2019},
+  url = {https://www.ndss-symposium.org/wp-content/uploads/2019/02/ndss2019_05A-4_Shin_paper.pdf}
+}
+
+@misc{bib:uafchecker,
+  author = {Jiayi Ye and Chao Zhang and Xinhui Han},
+  title = {UAFChecker: Scalable Static Detection ofUse-After-Free Vulnerabilities},
+  year = {2014},
+  url = {https://dl.acm.org/doi/epdf/10.1145/2660267.2662394}
+}
+
+@misc{bib:dcuaf,
+  author = {Jia-Ju Bai and Julia Lawall and Qiu-Liang Chen and Shi-Min Hu},
+  title = {Effective Static Analysis of Concurrency Use-After-Free Bugs in Linux Device Drivers},
+  year = {2019},
+  url = {https://www.usenix.org/system/files/atc19-bai.pdf}
+}
+
+@misc{bib:sinkfinder,
+  author = {Pan Bian and Bin Liang and Jianjun Huang and Wenchang Shi and Xidong Wang and Jian Zhang},
+  title = {SinkFinder: Harvesting Hundreds of Unknown InterestingFunction Pairs with Just One Seed},
+  year = {2020},
+  url = {https://dl.acm.org/doi/epdf/10.1145/3368089.3409678}
+}
+
+@misc{bib:goshawk,
+  author = {Yunlong Lyu and Yi Fang and Yiwei Zhang and Qibin Sun and Siqi Ma and Elisa Bertino and Kangjie Lu and Juanru Li},
+  title = {Goshawk: Hunting Memory Corruptions via Structure-Aware and Object-Centric Memory Operation Synopsis},
+  year = {2022},
+  url = {https://ieeexplore.ieee.org/stamp/stamp.jsp?tp=&arnumber=9833613}
+}
+
+@misc{bib:cid,
+  author = {Xin Tan and Yuan Zhang and Xiyu Yang and Kangjie Lu and Min Yang},
+  title = {Detecting Kernel Refcount Bugs with Two-Dimensional Consistency Checking},
+  year = {2021},
+  url = {https://yuanxzhang.github.io/paper/cid-security21.pdf}
+}
+
+@misc{bib:kernel-patch,
+  author = {Michal Luczaj},
+  title = {vsock: Keep the binding until socket destruction, Linux kernel patch},
+  year = {2025},
+  url = {https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=fcdd2242c0231032fc84e1404315c245ae56322a}
+}
+
+@misc{bib:z3,
+  author = {Leonardo de Moura and Nikolaj Bjørner},
+  title = {Z3: an efficient SMT solver},
+  year = {2008},
+  url = {https://dl.acm.org/doi/10.5555/1792734.1792766}
+}
+
+% ===== VULN =====
+
+@misc{bib:kvm,
+  author = {Avi Kivity and Yaniv Kamay and Dor Laor and Uri Lublin and Anthony Liguori},
+  title = {kvm : the Linux Virtual Machine Monitor},
+  year = {2007},
+  url = {https://api.semanticscholar.org/CorpusID:2408450}
+}
+
+@misc{bib:qemu,
+  author = {Fabrice Bellard},
+  title = {QEMU, a Fast and Portable Dynamic Translator},
+  year = {2005},
+  url = {https://www.usenix.org/conference/2005-usenix-annual-technical-conference/qemu-fast-and-portable-dynamic-translator}
+}
+
+@misc{bib:vmware-disco,
+  author = {Edouard Bugnion and Scott Devine and Mendel Rosenblum},
+  title = {Disco: Running Commodity Operating Systems on Scalable Multiprocessors - Disco would later become VMWare},
+  year = {1997},
+  url = {https://pages.cs.wisc.edu/~remzi/Classes/838/Spring2013/Papers/bugnion97disco.pdf}
+}
+
+@misc{bib:hyperv,
+  author = {{Microsoft}},
+  title = {Hyper-V Architecture - Microsoft Learn},
+  year = {2008},
+  url = {https://learn.microsoft.com/en-us/windows-server/virtualization/hyper-v/architecture}
+}
+
+@misc{bib:packed-virtqueue,
+  author = {Eugenio Pérez Martín},
+  title = {Packed virtqueue: How to reduce overhead with virtio},
+  year = {2020},
+  url = {https://www.redhat.com/en/blog/packed-virtqueue-how-reduce-overhead-virtio}
+}
+
+@misc{bib:vmware-esxi,
+  author = {{Broadcom}},
+  title = {VMWare ESXi docs on Broadcom Techdocs},
+  year = {2026},
+  url = {https://techdocs.broadcom.com/us/en/vmware-cis/vsphere/vsphere/8-0.html}
+}
+
+@misc{bib:xen-project-architecture,
+  author = {{Xen Project}},
+  title = {Introduction to Xen Project Architecture},
+  year = {2026},
+  url = {https://wiki.xenproject.org/wiki/Xen_Project_Software_Overview#Introduction_to_Xen_Project_Architecture}
+}
+
+@misc{bib:af-vsock-code,
+  author = {{Linux kernel developers}},
+  title = {af\_vsock module, Linux kernel code, v6.6.78},
+  year = {2025},
+  url = {https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/net/vmw_vsock/af_vsock.c?h=v6.6.78}
+}
+
+@misc{bib:linux-test-case-suite,
+  author = {{Linux Test Project}},
+  title = {CVE-2025-21756 Test Case in Linux Test Project release 20250930},
+  year = {2025},
+  url = {https://github.com/linux-test-project/ltp/releases/tag/20250930}
+}
+
+@misc{bib:af-vsock-max-retries,
+  author = {{Linux kernel developers}},
+  title = {af\_vsock module, Linux kernel code, v6.6.78, line 167},
+  year = {2025},
+  url = {https://elixir.bootlin.com/linux/v6.6.78/source/net/vmw_vsock/af_vsock.c#L167}
+}
+
+@misc{bib:uafx-code,
+  author = {{UAFX Project}},
+  title = {ModuleState6.cpp in UAFX's GitHub repository},
+  year = {2025},
+  url = {https://github.com/uafx/uafx/blob/main/llvm_analysis/MainAnalysisPasses/SoundyAliasAnalysis/src/ModuleState.cpp}
+}
+
+% ===== UAFX =====
+
+@misc{bib:smt,
+  author = {Clark Barrett and Roberto Sebastiani and Sanjit A. Seshia and Cesare Tinelli},
+  title = {Satisfiability Modulo Theories},
+  year = {2009},
+  url = {https://people.eecs.berkeley.edu/~sseshia/pubdir/SMT-BookChapter2e.pdf}
+}
+
+@misc{bib:gllvm,
+  author = {{gllvm project}},
+  title = {gllvm documentation - GitHub},
+  year = {2019},
+  url = {https://jenniniku.github.io/gllvm/}
+}
+
+@misc{bib:wllvm,
+  author = {{WLLVM project}},
+  title = {WLLVM - A wrapper script to build whole-program LLVM bitcode files - GitHub},
+  year = {2011},
+  url = {https://github.com/travitch/whole-program-llvm}
+}
+
+@misc{bib:syscalls,
+  author = {{Linux man-pages project}},
+  title = {Syscalls in Linux Manual Page},
+  year = {2026},
+  url = {https://man7.org/linux/man-pages/man2/syscall.2.html}
+}
+
+% ===== COUNTDOWN =====
+
+@misc{bib:kvm-install,
+  author = {{Fedora Project}},
+  title = {Virtualization – Getting Started (Fedora)},
+  year = {2026},
+  url = {https://docs.fedoraproject.org/en-US/quick-docs/virtualization-getting-started/}
+}
+
+@misc{bib:countdown-repo,
+  author = {Shuangpeng Bai and Zhechang Zhang and Hong Hu},
+  title = {CountDown repository on GitHub},
+  year = {2024},
+  url = {https://github.com/psu-security-universe/countdown}
+}
+
+@misc{bib:syzkaller-config,
+  author = {{syzkaller project}},
+  title = {Linux kernel configs on Syzkaller's GitHub repository},
+  year = {2026},
+  url = {https://github.com/google/syzkaller/blob/master/docs/linux/kernel_configs.md}
+}
+
+@misc{bib:config-init-stack-none,
+  author = {{Linux Kernel Driver DataBase (LKDDb)}},
+  title = {CONFIG\_INIT\_STACK\_NONE: no automatic stack variable initialization (weakest)},
+  year = {2026},
+  url = {https://cateee.net/lkddb/web-lkddb/INIT_STACK_NONE.html}
+}
+
+@misc{bib:config-init-on-alloc-default-on,
+  author = {{Linux Kernel Driver DataBase (LKDDb)}},
+  title = {CONFIG\_INIT\_ON\_ALLOC\_DEFAULT\_ON: Enable heap memory zeroing on allocation by default},
+  year = {2026},
+  url = {https://cateee.net/lkddb/web-lkddb/INIT_ON_ALLOC_DEFAULT_ON.html}
+}
+
+@misc{bib:config-init-on-free-default-on,
+  author = {{Linux Kernel Driver DataBase (LKDDb)}},
+  title = {CONFIG\_INIT\_ON\_FREE\_DEFAULT\_ON: Enable heap memory zeroing on free by default},
+  year = {2026},
+  url = {https://cateee.net/lkddb/web-lkddb/INIT_ON_FREE_DEFAULT_ON.html}
+}
+
+@misc{bib:debootstrap,
+  author = {{Debian Project}},
+  title = {Debootstrap documentation on Debian Wiki},
+  year = {2026},
+  url = {https://wiki.debian.org/Debootstrap}
+}
+
+@misc{bib:syzkaller-coverage,
+  author = {{syzkaller project}},
+  title = {Syzkaller coverage on GitHub},
+  year = {2026},
+  url = {https://github.com/google/syzkaller/blob/master/docs/coverage.md}
+}
+
+@misc{bib:config-debug-kmemleak,
+  author = {{kernelconfig.io}},
+  title = {Kernel memory leak detector},
+  year = {2026},
+  url = {https://www.kernelconfig.io/CONFIG_DEBUG_KMEMLEAK}
+}
+
+@misc{bib:kasan,
+  author = {{Linux kernel developers}},
+  title = {Kernel Address Sanitizer (KASAN)},
+  year = {2026},
+  url = {https://docs.kernel.org/dev-tools/kasan.html}
+}

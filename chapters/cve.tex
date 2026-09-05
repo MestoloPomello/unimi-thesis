@@ -108,39 +108,27 @@ Let's start with a test case \cite{bib:linux-test-case-suite} provided by the ma
 \noindent The test case in question does not lead to a privilege escalation, but causes the kernel to crash on vulnerable systems. The complete code is reported in \Cref{lst:cve_test_case}.
 
 \subsubsection{Step-by-step analysis}
-\color{red}
 Let's look at every relevant step in the test case to later understand what is going wrong in the reference counting mechanism associated with a vsock socket. Every kernel-side functionality involved will be described in detail in section \ref{functions_involved}. Error handling code is omitted when not necessary.
-\color{black}
 
 \begin{clncode}[firstnumber=14]
     s = vsock_bind(VMADDR_CID_LOCAL, VMADDR_PORT_ANY, SOCK_SEQPACKET);
 \end{clncode}
 
-\noindent \amst{After initially declaring the variables, a new local (identified by CID = 1) socket is bound. By doing this, the integer variable \texttt{s} will contain a new valid port assigned from the kernel.}{The Proof of Concept (POC) starts by creating a local (\lstinline{VMADDR_CID_LOCAL}) socket bound to the first available port (\lstinline{VMADDR_PORT_ANY})}.
+\noindent The Proof of Concept (POC) starts by creating a local (\lstinline{VMADDR_CID_LOCAL}) socket bound to the first available port (\lstinline{VMADDR_PORT_ANY}).
 
 \begin{clncode}[firstnumber=26]
     getsockname(s, (struct sockaddr *)&addr, &alen)
 
     for (i = 0; i < MAX_PORT_RETRIES; ++i) {
-        sockets[i] = vsock_bind(
-            VMADDR_CID_ANY,
-            ++addr.svm_port,
-            SOCK_SEQPACKET
-        );
+        sockets[i] =
+            vsock_bind(VMADDR_CID_ANY, ++addr.svm_port, SOCK_SEQPACKET);
     }
     
     close(s);
 \end{clncode}
 
-\noindent 
-\color{red}
-Starting with the port immediately following the one assigned by the kernel to the local socket, the code arbitrarily binds 24 ports in order to occupy them. This value corresponds to the maximum number of attempts that vsock makes to find an available port when a port is assigned automatically \cite{bib:af-vsock-max-retries}. The goal is to cause all automatic attempts to fail by manually occupying all the ports.
+\noindent Starting with the port immediately following the one assigned by the kernel to the local socket, the code arbitrarily binds 24 ports in order to occupy them. This value corresponds to the maximum number of attempts that vsock makes to find an available port when a port is assigned automatically \cite{bib:af-vsock-max-retries}. The goal is to cause all automatic attempts to fail by manually occupying all the ports.
 The first socket is then closed -- its only purpose was to automatically obtain the first available port from the kernel.
-\color{black}
-
-\begin{clncode}[firstnumber=34]
-\end{clncode}
-
 
 \begin{clncode}[firstnumber=35]
     s = socket(AF_VSOCK, SOCK_SEQPACKET, 0);
@@ -150,9 +138,10 @@ The first socket is then closed -- its only purpose was to automatically obtain 
         exit(EXIT_FAILURE);
     }
 \end{clncode}
-In this step, the "victim" socket for the exploit is created with no port, no peer, no bind, and no transport.
 
-We want the \texttt{connect} to fail in a specific way. With this connection attempt, the kernel prepares the socket, selects the transport and attempts to assign it a local port. The 24 ports we set up earlier are used to steer the process along this error path so that the transport is set but the socket remains in the unbound list.
+\noindent In this step, the "victim" socket for the exploit is created with no port, no peer, no bind, and no transport. Note that, when the socket is created, its reference counter is 2. This is because the first reference belongs to the \texttt{struct socket}, and the second is the reference associated with adding the socket to the unbound list, which is done by \texttt{\_\_vsock\_create()}.
+
+Then, we want the \texttt{connect} to fail in a specific way. With this connection attempt, the kernel prepares the socket, selects the transport and attempts to assign it a local port. The 24 ports we set up earlier are used to steer the process along this error path so that the transport is set but the socket remains in the unbound list.
 
 \begin{clncode}[firstnumber=47]
     addr.svm_cid = VMADDR_CID_NONEXISTING;
@@ -163,8 +152,8 @@ We want the \texttt{connect} to fail in a specific way. With this connection att
     /* connect() #2 failed: transport unset, sk ref dropped? */
 \end{clncode}
 
-\noindent The CID is then set to a non-existent type to force the next connection attempt to fail; this one proceeds just like the previous one, and we again expect it to fail, but for a different reason .
-This causes the trasport to be unset and, at the same time, the reference count to be decreased even if the object is still existing.
+\noindent The CID is then set to a non-existent type to force the next connection attempt to fail; this one proceeds just like the previous one, and we again expect it to fail, but for a different reason.
+This causes the trasport to be unset and, at the same time, the reference count to be decreased to 1 even if the object is still existing.
 
 \begin{clncode}[firstnumber=54]
     addr.svm_cid = VMADDR_CID_LOCAL;
@@ -180,7 +169,9 @@ This causes the trasport to be unset and, at the same time, the reference count 
     control_writeln("DONE");
 \end{clncode}
 
-\noindent The final step demonstrates how the vulnerability was triggered, showing that, on a vulnerable system, attempting to bind a socket to an invalid object causes a crash.
+\noindent In the \texttt{bind()} statement, the reference counter is further decremented to 0 when the socket is removed from the list of unbound sockets, causing the resource to be released. When the kernel-side \texttt{\_\_vsock\_bind} function continues execution and adds the socket to the bound list, the UAF is triggered.
+
+This final step demonstrates how the vulnerability was triggered, showing that, on a vulnerable system, attempting to bind a socket to an invalid object causes a crash. 
 
 \section{Cause and functions involved}\label{functions_involved}
 
@@ -211,10 +202,9 @@ In order to understand exactly why the bug occurs, we can start by looking at th
 
 Before examining the function itself, we need to explain how the \textbf{bound tables} approach works. There are two global (as all sockets on the system are placed within them) tables, one for \textbf{bound sockets} (sockets that have specified an address that they are responsible for) and one for \textbf{connected sockets} (sockets that have established a connection with another socket). The bound table contains an extra entry for a list of \textbf{unbound sockets}. These tables are managed as \textit{intrusive lists} and are contained directly within the socket structs.
 
-\color{red}
 In the test case, the \texttt{SOCK\_SEQPACKET} socket created after the port exhaustion loop is initially placed (by the kernel) in the unbound list because no local address has yet been assigned to it. When \texttt{connect()} to a local address, the kernel implicitly attempts to bind the socket. However, this operation fails because the previously allocated consecutive ports are unavailable. Consequently, the socket remains in the unbound list, despite having a transport layer assigned.
 
-The second \texttt{connect()} targets a non-existent address, causing the kernel to force a new transport selection. \color{black} During this reassignment, the previous transport is released and the socket is removed from the bound list through the normal bound-socket removal path, but the socket was never actually moved from the unbound list to one of the regular bound-table buckets. The vulnerable kernel code therefore treats an unbound socket as if it were normally bound and drops a reference that should have been preserved. The subsequent \texttt{bind()} then operates on a socket whose reference count may already be incorrect, exposing the use-after-free condition.
+The second \texttt{connect()} targets a non-existent address, causing the kernel to force a new transport selection. During this reassignment, the previous transport is released and the socket is removed from the bound list through the normal bound-socket removal path, but the socket was never actually moved from the unbound list to one of the regular bound-table buckets. The vulnerable kernel code therefore treats an unbound socket as if it were normally bound and drops a reference that should have been preserved. The subsequent \texttt{bind()} then operates on a socket whose reference count may already be incorrect, exposing the use-after-free condition.
 
 Now that we've covered how bound tables work, we can examine the contents of \texttt{vsock\_remove\_bound}. Since the original function calls a wrapper that contains mutual exclusion instructions and the entire function that contains the actual logic, for simplicity we'll focus directly on the latter:
 

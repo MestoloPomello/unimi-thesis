@@ -1,41 +1,110 @@
-\documentclass[a4paper,12pt,twoside,openright]{report}
-%    \renewcommand{\baselinestretch}{1.6}      % interline spacing
-%
-% \includeonly{}
-%
-%			PREAMBOLO
-%
-\usepackage{amssymb,amsmath,amsthm}
-\usepackage{graphicx}
-\usepackage{xurl}
-\usepackage{epsfig}
-\usepackage[english]{babel}
-\usepackage{setspace}
-\usepackage{tesi}
-\usepackage{float}
-\usepackage{xspace}  
-\usepackage{enumitem}
-\usepackage[a-1b]{pdfx}
-\usepackage{tikz}
-\usepackage{soul}
-\usepackage{makecell}
-\usepackage[
-  a4paper,
-  twoside,
-  inner=3.5cm,
-  outer=2.5cm,
-  top=3cm,
-  bottom=3cm,
-  bindingoffset=0.5cm
-]{geometry}
+\documentclass[12pt]{report}
 
-% per le accentate
+% --- PREAMBOLO ---------------------------------------------------------------
+
+% Selezione lingua
+\usepackage[numbers]{natbib}
+\usepackage[english]{babel}
+\usepackage{inputenc}
+\usepackage{csquotes}
+\usepackage{listings}
+\usepackage{amsmath}
+\usepackage{makecell}
+\usepackage{amssymb}
+\usepackage{amsthm}
+\usepackage{graphicx}
+\usepackage{caption}
+\usepackage{lipsum}
+\usepackage{xspace}
+\usepackage{soul}
+\usepackage{xcolor}
+\usepackage{tesi}
+\usepackage{wrapfig}
+\usepackage{circledsteps}
+\usepackage[english,nameinlink]{cleveref}
+\usepackage[inline]{enumitem}
+\usepackage{subcaption}
+\usepackage{xurl}
+%\usepackage{hyperref}
+\usepackage{setspace}
+\usepackage{float}
+\usepackage{tikz}
+\usepackage{makecell}
+\usepackage{cellspace}
+\usepackage{etoolbox}
 \usepackage[utf8]{inputenc}
 \usepackage[newfloat]{minted}
-\usepackage{listings}
-\usepackage{float}
-\usepackage{caption}
-\usepackage{cleveref}
+\hypersetup{
+  pdfauthor={Stefano Nava},
+  pdftitle={Reproduction and analysis of real-world use-after-free attacks and study of defence techniques},
+  pdfsubject={Tesi di laurea},
+  pdfkeywords={tesi, android, obfuscation, unimi},
+  colorlinks=true,
+  allcolors=blue
+}
+\usepackage[a-1b]{pdfx}
+
+\definecolor{codegreen}{rgb}{0,0.6,0}
+\definecolor{codegray}{rgb}{0.5,0.5,0.5}
+\definecolor{codepurple}{rgb}{0.58,0,0.82}
+\definecolor{backcolour}{rgb}{0.95,0.95,0.92}
+
+\lstdefinestyle{mystyle}{
+    backgroundcolor=\color{backcolour},   
+    commentstyle=\color{codegreen},
+    keywordstyle=\color{magenta},
+    numberstyle=\tiny\color{codegray},
+    stringstyle=\color{codepurple},
+    basicstyle=\ttfamily\footnotesize,
+    breakatwhitespace=false,         
+    breaklines=true,                 
+    captionpos=b,                    
+    keepspaces=true,                 
+    numbers=left,                    
+    numbersep=5pt,                  
+    showspaces=false,                
+    showstringspaces=false,
+    showtabs=false,                  
+    tabsize=2,
+    belowskip=0pt,
+}
+
+\lstset{style=mystyle}
+
+% estratti del codice
+\usepackage{minted}
+\newminted[cppcode]{cpp}{fontsize=\footnotesize, xleftmargin=10pt, breaklines}
+\newminted[cpplncode]{cpp}{fontsize=\footnotesize, xleftmargin=10pt, linenos, breaklines, escapeinside=||}
+\newminted[xmlcode]{xml}{fontsize=\footnotesize, xleftmargin=10pt, breaklines}
+\newminted[xmllncode]{xml}{fontsize=\footnotesize, xleftmargin=10pt, linenos, breaklines, escapeinside=||}
+\newminted[javacode]{java}{fontsize=\footnotesize, xleftmargin=10pt, breaklines}
+\newminted[javalncode]{java}{fontsize=\footnotesize, xleftmargin=10pt, linenos, breaklines, 
+escapeinside=||}
+\newminted[jscode]{javascript}{fontsize=\footnotesize, xleftmargin=10pt, breaklines}
+\newminted[jslncode]{javascript}{fontsize=\footnotesize, xleftmargin=10pt, linenos, breaklines, 
+escapeinside=||}
+\newminted[cmakecode]{cmake}{fontsize=\footnotesize, xleftmargin=10pt, breaklines}
+\newminted[clncode]{c}{fontsize=\small, xleftmargin=10pt, linenos, breaklines, escapeinside=|||, mathescape=false}
+\newmintedfile[cfile]{c}{fontsize=\small, xleftmargin=10pt, linenos, breaklines, escapeinside=|||, mathescape=false}
+\newminted[bashlncode]{bash}{fontsize=\small, xleftmargin=10pt, linenos, breaklines, escapeinside=|||, mathescape=false}
+\newmintedfile[bashfile]{bash}{fontsize=\small, xleftmargin=10pt, linenos, breaklines, escapeinside=|||, mathescape=false}
+
+\AfterEndEnvironment{clncode}{\par\vspace{1\baselineskip}}
+\AfterEndEnvironment{bashlncode}{\par\vspace{1\baselineskip}}
+
+
+\newcommand{\clineref}[1]{linea \Circled{\ref*{#1}}}
+\newcommand{\Clineref}[1]{Linea \Circled{\ref*{#1}}}
+\newcommand*\Standardnumber{%
+    \gdef\theFancyVerbLine{ 
+        \arabic{FancyVerbLine}
+    }
+}
+\newcommand*\Circlednumber{%
+    \gdef\theFancyVerbLine{ 
+        \Circled{\arabic{FancyVerbLine}}
+    }
+}
 
 %-------------------------------------------------------------------------------
 % Notes
@@ -45,71 +114,101 @@
 \newcommand{\am}[1]{\textcolor{red}{\mynote{AndrM}{#1}}}
 \newcommand{\amst}[2]{\textcolor{red}{\st{#1} {#2}}}
 
-%-------------------------------------------------------------------------------
+\makeatletter
+\newlength\minted@belowskip
+\define@key{minted@opt}{belowskip}[\@topsepadd]
+{\setlength{\minted@belowskip}{#1}}
+
+\def\minted@endparenv{%
+  \addpenalty\@endparpenalty\addvspace\minted@belowskip\@endpetrue}
+\def\FV@EndList{%
+  \FV@ListProcessLastLine
+  \FV@EndListFrame
+  \minted@endparenv
+  \endgroup
+  \@endpetrue}
+\makeatother
+
+% ------------------
 % Others
-%-------------------------------------------------------------------------------
-\newtheorem{myteor}{Teorema}[section]
-\newenvironment{teor}{\begin{myteor}\sl}{\end{myteor}}
-\renewcommand{\arraystretch}{1.5} % Padding verticale
-%-------------------------------------------------------------------------------
-% Minted Environments
-%-------------------------------------------------------------------------------
+% ------------------
 
-\newminted[cpplncode]{cpp}{fontsize=\small, xleftmargin=10pt, linenos, breaklines, escapeinside=|||, mathescape=false}
-\newmintedfile[cppfile]{cpp}{fontsize=\small, xleftmargin=10pt, linenos, breaklines, escapeinside=||, mathescape=false}
+% Padding verticale
+\renewcommand{\arraystretch}{1.5}
 
-\newminted[clncode]{c}{fontsize=\small, xleftmargin=10pt, linenos, breaklines, escapeinside=|||, mathescape=false}
-\newmintedfile[cfile]{c}{fontsize=\small, xleftmargin=10pt, linenos, breaklines, escapeinside=|||, mathescape=false}
+% Padding verticale makecell
+\setlength\cellspacetoplimit{4pt}
+\setlength\cellspacebottomlimit{4pt}
 
-\newminted[bashlncode]{bash}{fontsize=\small, xleftmargin=10pt, linenos, breaklines, escapeinside=|||, mathescape=false}
-\newmintedfile[bashfile]{bash}{fontsize=\small, xleftmargin=10pt, linenos, breaklines, escapeinside=|||, mathescape=false}
+\newcommand{\specialcellleft}[2][c]{%
+  \begin{tabular}[#1]{@{}l@{}}#2\end{tabular}}
 
-%
-%
-%			TITOLO
-%
+\newcommand*\circled[1]{\tikz[baseline=(char.base)]{
+        \node[shape=circle,draw,inner sep=1pt] (char) {#1};}}
+
+% Puoi usare il font di default di LaTeX con la relativa opzione del package
+% \usepackage[defaultfont]{tesi}
+%   UNIVERSITA' E CORSO DI LAUREA:
+\university{Università degli Studi di Milano}
+\unilogo{images/logos/unimi}
+\faculty{Facoltà di Scienze e Tecnologie}
+\department{Dipartimento di Informatica\\Giovanni Degli Antoni}
+\cdl{Corso di Laurea Magistrale in\\Informatica}
+
+%   TITOLO TESI:
+\printedtitle{Reproduction and analysis of real-world use-after-free attacks and study of defence techniques}
+
+%   AUTORE:
+\author{Stefano Nava}
+\matricola{27436A}
+\typeofthesis{Thesis}
+
+%   RELATORE E CORRELATORE:
+\relatore{Prof. Andrea Lanzi}
+\correlatore{Dr. Andrea Monzani}
+
+%   LABORATORIO:
+ \laserlab
+
+%   ANNO ACCADEMICO
+% \the\year inserisce l'anno corrente
+% per specificare manualmente un anno accademico
+% NON inserire nel formato 1970-1971, ma
+% inserire solo 1970 
+%\academicyear{\the\year}
+\academicyear{2025} 
+
+%   INDICI:
+\tocintoctrue
+% --- FINE PREAMBOLO ----------------------------------------------------------
 \begin{document}
-\title{REPRODUCTION AND ANALYSIS OF REAL-WORLD USE-AFTER-FREE ATTACKS AND STUDY OF DEFENCE TECHNIQUES}
-\author{Stefano NAVA}
-\dept{Corso di Laurea Magistrale in Informatica} 
-\anno{2025-2026}
-\matricola{123456}
-\relatore{Prof. Andrea LANZI}
-\correlatore{Dr. Andrea MONZANI}
-%
-%        \submitdate{month year in which submitted to GPO}
-%		- date LaTeX'd if omitted
-%	\copyrightyear{year degree conferred (next year if submitted in Dec.)}
-%		- year LaTeX'd (or next year, in December) if omitted
-%	\copyrighttrue or \copyrightfalse
-%		- produce or don't produce a copyright page (false by default)
-\figurespagetrue
-%		- produce or don't produce a List of Figures page
-%		  (false by default)
-%	\tablespagetrue or \tablespagefalse
-%		- produce or don't produce a List of Tables page
-%		  (false by default)
-% 
-%			DEDICA
-%
-
-\beforepreface
-
-%
-%			RINGRAZIAMENTI
-%
-%\prefacesection{Ringraziamenti}
-%asdjhgftry.
-
+% Creazione automatica della copertina
+% Centra la copertina nel foglio: usa questo comando per la copertina esterna
+% \makecenteredfrontpage
+% Copertina allineata alle altre pagine: usa questo comando per la copertina interna
+\makefrontpage
 \afterpreface
 
 \input{chapters/introduction}
 \input{chapters/background}
 \input{chapters/cve}
-\input{chapters/uafx}
 \input{chapters/countdown}
+\input{chapters/uafx}
 \input{chapters/conclusions}
 
-\input{bibliography}
+%--------------------------------
+
+
+
+
+%
+%			BIBLIOGRAFIA
+%
+%% Loading bibliography style file
+\bibliographystyle{unsrtnat}
+% Loading bibliography database
+\bibliography{bibliography}
+% Pagina di chiusura
+\closingpage
 
 \end{document}

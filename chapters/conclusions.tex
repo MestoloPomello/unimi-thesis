@@ -1,1 +1,70 @@
 \chapter{Conclusions}
+
+The main objectives of this thesis were to reproduce and analyze a real-world use-after-free memory corruption vulnerability, CVE-2025-21756, affecting the Linux kernel's vsock subsystem, and to evaluate the efficacy of state-of-the-art static and dynamic analysis tools in detecting such reference counting bugs. Specifically, we evaluated CountDown (a refcount-guided dynamic fuzzer) and UAFX (a static analyzer) under various configurations to assess their ability to identify this class of vulnerabilities.
+
+This chapter summarizes our experimental findings, discusses the underlying complexities that make reference counting vulnerabilities an open research problem, addresses the limitations of our evaluation environment and outlines promising directions for future work.
+
+\section{Summary of experimental findings}
+
+Our experimental study revealed that detecting reference-count-driven UAF vulnerabilities remains a challenging task for automated tools, even when these tools are modified or guided with prior knowledge of the target vulnerability:
+
+\begin{enumerate}
+    \item \textbf{Dynamic Analysis with CountDown}: in the unguided fuzzing campaign (without a starting corpus), CountDown ran for several days but did not produce any crash reports or trace any anomalous reference counting behaviors related to CVE-2025-21756.
+    
+    In the guided fuzzing campaign, we provided CountDown with a highly targeted seed corpus translating the maintainers' test case into Syzkaller's typed syscall format and restricted the active syscall set to vsock interfaces. Over a multi-day campaign executing more than 1.7 million test cases, CountDown still failed to trigger a crash or record any anomalous kref history, confirming that even when primed with a valid trigger sequence, coverage-guided and refcount-guided fuzzers struggle to recreate the precise execution state and satisfy the strict argument dependencies necessary to expose this class of bugs under realistic workloads.
+    
+    \item \textbf{Static analysis with UAFX}: the unmodified version of UAFX failed to detect the vulnerability in the consolidated \texttt{\_vsock\_all.bc} bitcode, completing its bug detection phase in less than a millisecond without generating any warnings or identifying any relevant callback structures.
+    
+    To investigate whether this was solely due to UAFX's intentional exclusion of reference counting patterns, we modified UAFX by disabling the syntactic filter\\\texttt{\_isWithRefcnt} in \texttt{ModuleState.cpp}. Despite removing this constraint, the analysis behavior remained virtually identical, failing to reconstruct any UAF path. This demonstrated that the tool's blind spot lies deeper within its core static analysis mechanisms (interprocedural propagation, alias analysis, handling of complex indirect function calls and kernel-specific callbacks).
+
+    One reason for this could also be related to how UAFX itself works: since the paper tests it only on drivers, there is no guarantee that it will be equally effective when applied to a set of different modules working together.
+\end{enumerate}
+
+\section{The complexity of reference counting UAFs as an open problem}
+
+The fact that both a cutting-edge static analyzer and a specialized refcount fuzzer failed to identify CVE-2025-21756 underscores that reference-count-related memory safety issues represent a highly complex and still open problem in kernel security. Reference-counting bugs in the kernel affect several areas:
+
+\begin{enumerate}
+    \item \textbf{Non-linear execution paths}: as shown in CVE-2025-21756, the bug is "cross-entry", involving distinct syscalls (socket, connect, and bind) executing across different entry points and contexts;
+
+    \item \textbf{State-dependent preconditions}: triggering this specific vulnerability requires establishing a highly complex state by exhausting the host's available automatic vsock ports via a sequence of 24 consecutive bindings, which steers the first connection attempt into a failure path that leaves the socket in an unbound state but with an active transport layer. Forcing these precise state-dependent constraints is something that static engines cannot easily model symbolically (due to path explosion and environment modeling limits) and that dynamic fuzzers cannot easily hit by chance, even when guided by code coverage or simple refcount changes;
+
+    \item \textbf{Semantic vs. syntactic analysis}: UAFX relies on simple syntactic heuristics (i.e. matching function names containing "put" or "get") to filter out refcount candidates, rather than performing deep semantic reasoning on the counter's value. Conversely, dynamic fuzzers are bound by the temporal gap between the reference count drop and the actual memory access; if the allocator's state or the timing is not perfectly aligned, the UAF will not result in an immediate, detectable crash, leaving the bug silent unless captured by heavy sanitizers like KASAN under specific heap configurations, which is probably what the researcher(s) who first discovered the bug did.
+\end{enumerate}
+
+\section{Evaluation constraints and limitations}
+An analysis of our experimental evaluation must highlight several structural and environmental limitations, which we list below.
+
+\subsubsection{Hardware and computational limits}
+Dynamic fuzzing with CountDown is an exceptionally resource-intensive process. We allocated 6 parallel virtual machine instances (totaling 12 vCPUs and 12 GB of RAM) to the fuzzer. While this configuration represents a reasonable academic setup, it is modest compared to industrial-scale fuzzing farms that utilize hundreds of virtual machines running continuously. For example, the test configuration used by the researchers who authored the CountDown paper \cite{bib:countdown} consisted of a setup of 16 virtual machines, each with 2 CPUs, for a total of 3 days of execution.
+
+Because CountDown constantly monitors and logs every single reference-counting operation across the kernel, it introduces a significant instrumentation overhead. Under our hardware limits, this overhead directly constrained the execution throughput (number of executions per second), making it harder to explore highly deep or improbable paths.
+
+\subsubsection{Search space constraints}
+Fuzzing is inherently non-deterministic and requires massive time scales to cover deep state spaces. Although our campaign ran for several days and reached over 1.7 million executions, the combinatorial search space of vsock socket operations, especially with the strict requirement of consecutive port exhaustion, remained too vast to be exhausted. A longer fuzzing window or a more powerful hardware environment might have yielded different results.
+
+\section{Promising directions for future work}
+
+The results and limitations of this study suggest several directions for future research on use-after-free vulnerabilities and, more specifically, on reference-counting errors in the Linux kernel.
+
+\subsubsection{Broader characterization of recent UAF vulnerabilities}
+
+A first direction concerns a broader and more systematic study of recent use-after-free vulnerabilities affecting the Linux kernel. The vulnerabilities considered in this thesis provide useful examples of different lifetime errors, but they represent only a limited portion of the UAF vulnerabilities discovered in recent kernel versions.
+
+Extending the analysis to a larger and more recent set of vulnerabilities could help identify recurring patterns in their root causes, affected subsystems or triggering conditions. Such a study could also determine how frequently reference-counting errors occur compared with other causes of use-after-free vulnerabilities \cite{bib:use-after-free} and whether particular classes of lifetime errors are becoming more or less relevant as the kernel and its defensive mechanisms evolve.
+
+\subsubsection{Systematic evaluation of dynamic analysis tools}
+
+A second direction is the systematic evaluation of dynamic analysis techniques against a consolidated ground truth of known use-after-free vulnerabilities. Evaluating different approaches on the same set of reproducible vulnerabilities would provide a more reliable basis for understanding their actual detection coverage.
+
+This should consider not only whether a vulnerability can eventually be detected, but also whether the execution strategy is capable of reaching the conditions required to expose it. This distinction is particularly important for vulnerabilities whose manifestation depends on specific conditions (for example concurrent instructions) or uncommon execution paths. An example of this need is explained in section \ref{sec:tests-with-starting-corpus}, where we highlight the impossibility of following a certain flow, especially in terms of arbitrary inputs, due to the very nature of the fuzzer. In fact, to guide the execution more precisely, it would be necessary to modify the very essence of the tool by introducing a way to "fix" parameters that remain unchanged during executions. Realistically, this can be useful in a situation where it is already known that a specific execution flow may cause certain problems, but it is not known exactly which ones, and one wishes to explore that direction.
+
+A sufficiently broad and reproducible benchmark could therefore provide a clearer characterization of the strengths and limitations of existing dynamic approaches and make comparisons between different techniques more meaningful.
+
+\subsubsection{Static analysis of reference-counting correctness}
+
+Finally, reference counting represents a particularly relevant direction for further static analysis research. As shown throughout this thesis, determining whether an object is released while references to it are still logically active requires reasoning about object ownership and lifetime across potentially complex execution paths.
+
+Future work could investigate static approaches specifically aimed at identifying inconsistencies between reference acquisition, propagation and uses, and release. The objective would be to determine whether reference counting invariants can be reconstructed and verified without relying on the vulnerability being dynamically triggered.
+
+A more general investigation of this problem could help establish which classes of reference counting errors can be effectively detected statically, which sources of imprecision limit current approaches and where static analysis must be complemented by dynamic techniques. This would also provide a basis for evaluating whether reference counting vulnerabilities require specialized analysis or can be adequately addressed within more general approaches to use-after-free detection.

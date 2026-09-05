@@ -25,12 +25,19 @@ Unauthorized access to or arbitrary modification of these elements can therefore
 \noindent The two areas primarily affected by attacks of this kind are the stack and the heap.
 
 \subsection{Stack}
-The stack is a data structure organised according to a LIFO (Last In, First Out) policy and used primarily for managing function calls. Each function call involves the creation of a \emph{stack frame} containing local variables, parameters and return information (such as the return address, which tells the program the point in the calling code from which to resume execution once the function has been exited). The allocation and deallocation of memory on the stack are automatic and handled by the compiler: when a function terminates, its corresponding frame is removed.
+The stack is a data structure organized according to a LIFO (Last In, First Out) policy and used primarily for managing function calls. Each function call involves the creation of a \emph{stack frame} containing local variables, parameters and return information (such as the return address, which tells the program the point in the calling code from which to resume execution once the function has been exited). The allocation and deallocation of memory on the stack are automatic and handled by the compiler: when a function terminates, its corresponding frame (figure \ref{fig:stack}) is removed.
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[scale=.22]{images/stack.png}
+    \caption{Example of a stack frame structure.}
+    \label{fig:stack}
+\end{figure}
 
 \subsection{Heap}
 The heap is a memory region used for dynamic allocations, managed explicitly by the programmer using primitives such as \texttt{malloc}/\texttt{free} in C or \texttt{new}/\texttt{delete} in C++. These functions do not normally request a new memory region from the operating system for every individual location, but a user-space memory allocator manages larger regions of memory, dividing them into smaller blocks and keeping track of which portions are currently allocated or available for reuse.
 
-On Linux systems, the allocator can obtain additional virtual memory from the kernel through mechanisms such as \texttt{brk()}, which changes the end of the process data segment, or \texttt{mmap()}, which creates new memory mappings. Large allocations are commonly serviced through \texttt{mmap()} while other allocations may be satisfied from memory already managed by the allocator or from an enlarged process heap. The exact strategy is implementation-dependent and may change according to allocation size and configuration. \cite{bib:gnu-allocator} \cite{bib:malloc-efficiency}
+On Linux systems, the allocator can obtain additional virtual memory from the kernel through mechanisms such as \texttt{brk()}, which changes the end of the process data segment, or \texttt{mmap()}, which creates new memory mappings. Large allocations are commonly serviced through \texttt{mmap()} while other allocations may be satisfied from memory already managed by the allocator or from an enlarged process heap. The exact strategy is implementation-dependent and may change according to allocation size and configuration \cite{bib:gnu-allocator, bib:malloc-efficiency}.
 
 Unlike the stack, therefore, heap allocations do not follow a strict LIFO (Last In, First Out) order: allocated blocks may be released independently and subsequently reused for other object, which is essential for dynamically sized and long-lived data structures, but it also makes object lifetime and memory reuse more difficult to manage correctly, creating the conditions in which errors like UAF may appear.
 
@@ -78,21 +85,13 @@ It's important to distinguish the lifetime of an \textit{object} from the one of
 
 As mentioned in section \ref{sec:refcount}, a solution to this problem is counting references for the objects, but an early deallocation can still result in a dangling pointer and can therefore be a specific (but not the only) cause of a use-after-free bug (and a potential exploit as a result).
 
-\subsection{Exploiting UAF and refcount errors}\label{sec:exploiting-uaf-refcount}
+\subsection{Theory of refcount-based UAF exploitation}\label{sec:exploiting-uaf-refcount}
 
-From an exploit perspective, the dangling reference resulting from this lifetime inconsistency represents only the initial condition of the attack. The object may have already been freed while an execution context still retains its address. The following example illustrates how one can read a value in a freed memory zone exploiting a dangling pointer.
+From an exploitation perspective, a reference-counting error becomes security-relevant when it causes an object to be deallocated while a reference to it remains reachable. The resulting dangling pointer does not by itself provide an attacker with a useful primitive: exploitation generally requires controlling, or at least influencing, what happens to the freed memory and how the stale reference is subsequently used.
 
-\clearpage
-\begin{listing}[H]
-    \captionof{listing}{Example of a read operation exploiting a UAF caused by a refcount error.}
-    \cfile{code/uaf-refcount.c}
-\end{listing}
-
-\noindent In more complex (and realistic) cases, such as CVE-2021-0920 \cite{bib:exploit-cve-2021-0920} and CVE-2025-21756 \cite{bib:exploit-cve-2025-21756}, exploitation relies on turning this stale reference into a predictable and controllable interaction with the allocator and with subsequent allocations.
-
-\noindent In practice, an exploit procedure can be represented by the following sequence of steps:
+A generalized exploitation process can be represented by the following sequence of steps:
 \begin{enumerate}
-    \item Triggering an incorrect reference-counting transition
+    \item Triggering an incorrect reference counting transition
     \item Maintaining a reachable dangling pointer
     \item Reusing the freed memory with a suitable replacement object
     \item Accessing the new contents via the obsolete type
@@ -115,7 +114,9 @@ Objects that contain pointers to functions or references to related structures a
 
 A pending reference may also interact directly with the reference counting mechanism. If the obsolete pointer is used in a deallocation operation, the system may decrement a field that no longer represents the original counter. This may corrupt the new object or cause a second deallocation of the same memory region. In such cases, the initial error may lead to additional conditions such as double-free or premature destruction of the new object. The exploit may therefore involve multiple consecutive violations of the object's lifecycle.
 
-Although this is only a generalized explanation of the idea and process behind exploiting this type of vulnerability, it usually isn't easy as it seems, due to the need for certain conditions to be met.
+The practical exploitability of a reference-counting UAF therefore depends on several conditions: the attacker must be able to trigger the incorrect lifetime transition, preserve and subsequently use the dangling reference, obtain sufficiently predictable memory reuse and transform the resulting stale access into a useful primitive despite the allocator's behaviour and the mitigations provided by the target system. These requirements make real-world exploitation substantially more complex than the underlying reference-counting error itself.
+
+Concrete examples of this exploitation process can be found in vulnerabilities such as CVE-2021-0920 \cite{bib:exploit-cve-2021-0920} and CVE-2025-21756 \cite{bib:exploit-cve-2025-21756}, which illustrate how reference-counting and object-lifetime errors can be transformed into exploitable use-after-free conditions in real systems.
 
 \section{Linux and its kernel}
 
@@ -162,17 +163,14 @@ These objects are dynamically allocated on the kernel heap through the \textit{s
 Since many of these objects can be referenced simultaneously from multiple kernel subsystems (e.g. a socket can be held by a process, referenced by a pending timer, and pointed to by an active network connection at the same time) their lifetime cannot be tied to a single owner and this is where the reference counting mechanism comes into play. It is efficient, but its correctness relies entirely on every code path that acquires or releases a reference doing so properly. As the kernel grows in complexity and concurrency, maintaining this invariant across all subsystems becomes increasingly difficult and subtle errors in reference counter management can cause the counter to reach zero prematurely, triggering the deallocation of an object that is still reachable from some other part of the kernel.
 
 \subsection{Use-after-free vulnerabilities in the Linux kernel}
-
-Use-after-free vulnerabilities are particularly relevant in the Linux kernel because many kernel objects are dynamically allocated, shared among different subsystems and accessed concurrently by multiple execution contexts (e.g. sockets, network objects, device structures). Their lifetime, as described in section \ref{sec:refcount}, is often managed through mechanisms like reference counting which, in case of wrong manipulation, can produce dangling pointers and subsequent use-after-free exploits.
-
-As stated previously, the consequences of errors like these are generally more severe than in a normal user-space program, since kernel code executes with high privileges. Detecting these vulnerabilities is complicated by the structure of the kernel itself. The allocation, use and release of an object may occur in different context and the relevant sequence of operation is likely not visible within a single control-flow path (this includes the thread concurrency problem seen in section \ref{sec:exploiting-uaf-refcount}). 
+Since kernel code executes with high privileges, consequences of reference-counting errors are generally more severe than in a normal user-space program. Detecting these vulnerabilities is complicated by the structure of the kernel itself. The allocation, use and release of an object may occur in different context and the relevant sequence of operation is likely not visible within a single control-flow path.
 
 These characteristics make automated kernel analysis particularly complex. Detection tools have to deal with code spread across multiple modules that interact in a non-linear manner. Their analysis may also be constrained to a specific kernel version or compiler, or require modifications to the build system and, in some cases, full kernel instrumentation. Moreover, the continuous evolution of internal APIs can quickly lead to compatibility issues if the analyzer is not actively maintained. The kernel documentation distinguishes between numerous categories of tools, such as:
 \begin{itemize}
     \item \textit{static analyzers}: code analysis by tracking objects' paths without executing the code. An example is UAFX \cite{bib:uafx}, which we tested and discuss in section \ref{uafx}
     \item \textit{sanitizers}: suspect behaviour detection by instrumentating the code through a compiler
     \item \textit{code coverage tools}: measurement of the quantity of code covered by tests
-    \item \textit{fuzzing tools}: generation of random inputs in order to test different execution paths for the analyzed software 
+    \item \textit{fuzzing tools}: generation of random inputs in order to test different execution paths for the analyzed software. An example is CountDown
     \item \textit{mechanisms for detecting race conditions}: identification of critical code sections where a race condition may happen
 \end{itemize}
 
@@ -188,30 +186,31 @@ Due to the unpredictable nature of these bugs, the numerous conditions required 
 In table \ref{table:tools} are some examples of tools capable of analyzing code and detecting use-after-free vulnerabilities. Since each vulnerability exploits different weaknesses, we have compiled a list of tools with different purposes and modes of operation to provide a broader range of options in this regard.
 
 {
-    \renewcommand{\arraystretch}{1.5} % Padding verticale
-    \begin{table}[h]
+    \begin{table}[p]
         \small
         \centering
-        \begin{tabular}{|c|c|c|c|c|}
+        \begin{tabular}{|S{c}|S{c}|S{c}|S{c}|S{c}|S{c}|}
             \hline
-            \textbf{Tool} & \textbf{\makecell{LLVM//based}} & \textbf{\makecell{Usable in\\kernel}} & \textbf{\makecell{Public\\source}} & \textbf{\makecell{Supports\\refcount}}\\\hline
-            \textbf{UAFX} \cite{bib:uafx} & Yes & Yes & Yes & No \\\hline
-            \textbf{CountDown} \cite{bib:countdown} & Yes & Yes & Yes & Yes \\\hline
-            Infer \cite{bib:infer} & Yes (+ Clang) & Yes & Yes & No \\\hline
-            Clang Static Analyzer \cite{bib:clang} & Yes & Yes & Yes & No \\\hline
-            Syzkaller \cite{bib:syzkaller} & Yes & Yes & Yes & No \\\hline
-            GCC-fanalyzer \cite{bib:gcc} & No & No & Yes & No \\\hline
-            CRed \cite{bib:cred} & Yes & No & No & No \\\hline
-            Cppcheck \cite{bib:cppcheck} & Yes & No & Yes & No \\\hline
-            SVF-derived tools \cite{bib:svf} & Yes & No & Yes & No \\\hline
-            FreeWill \cite{bib:freewill} & Yes & No & No & Yes \\\hline
-            LinkRID \cite{bib:linkrid} & Yes & Yes & No & Yes \\\hline
-            CRCount \cite{bib:crcount} & Yes & No & No & Yes \\\hline
-            UAFChecker \cite{bib:uafchecker} & Yes & No & No & No \\\hline
-            DCUAF \cite{bib:dcuaf} & Yes & Yes & No & No\\\hline
-            SinkFinder \cite{bib:sinkfinder} & Yes & No & No & Yes \\\hline
-            Goshawk \cite{bib:goshawk} & Yes & Yes & Yes & No \\\hline
-            CID \cite{bib:cid} & Yes & Yes & No & Yes \\\hline
+            \textbf{Tool} & \textbf{\makecell{LLVM\\based}} & \textbf{\makecell{Usable in\\kernel}} & \textbf{\makecell{Public\\source}} & \textbf{\makecell{Supports\\refcount}} & 
+            \textbf{\makecell{Static/\\dynamic}}\\\hline
+            \textbf{CountDown} \cite{bib:countdown} & Yes & Yes & Yes & Yes & Dynamic\\\hline
+            \textbf{UAFX} \cite{bib:uafx} & Yes & Yes & Yes & No* & Static\\\hline
+            Infer \cite{bib:infer} & Yes (+ Clang) & Yes & Yes & No & Static\\\hline
+            \makecell{Clang Static\\Analyzer \cite{bib:clang}} & Yes & Yes & Yes & No & Static\\\hline
+            Syzkaller \cite{bib:syzkaller} & Yes & Yes & Yes & No & Dynamic\\\hline
+            GCC-fanalyzer \cite{bib:gcc} & No & No & Yes & No & Static \\\hline
+            CRed \cite{bib:cred} & Yes & No & No & No & Dynamic\\\hline
+            Cppcheck \cite{bib:cppcheck} & Yes & No & Yes & No & Static\\\hline
+            \makecell{SVF-derived\\tools \cite{bib:svf}} & Yes & No & Yes & No & Static\\\hline
+            FreeWill \cite{bib:freewill} & Yes & No & No & Yes & Dynamic\\\hline
+            LinkRID \cite{bib:linkrid} & Yes & Yes & No & Yes & Hybrid\\\hline
+            CRCount \cite{bib:crcount} & Yes & No & No & Yes & Dynamic\\\hline
+            UAFChecker \cite{bib:uafchecker} & Yes & No & No & No & Static\\\hline
+            DCUAF \cite{bib:dcuaf} & Yes & Yes & No & No & Static\\\hline
+            SinkFinder \cite{bib:sinkfinder} & Yes & No & No & Yes & Static\\\hline
+            Goshawk \cite{bib:goshawk} & Yes & Yes & Yes & No & Static \\\hline
+            CID \cite{bib:cid} & Yes & Yes & No & Yes & Static \\\hline
+            \multicolumn{6}{S{l}}{\makecell{* In theory, UAFX is capable of detecting reference counting issues as well;\\however, by design, it has been limited to algorithmically filter them out\\because their tests revealed too many false positives.}}
         \end{tabular}
         \caption{Complete list of tools that we have considered for this study.}
         \label{table:tools}
@@ -219,9 +218,108 @@ In table \ref{table:tools} are some examples of tools capable of analyzing code 
 }
 
 \noindent In the next sections, we will describe the tools that are relevant for this work. There were two tools specifically designed to detect UAF bugs in the Linux kernel: CountDown and CID. Unfortunately, CID does not have publicly available source code, and, as with other tools that do not meet this criterion, we decided to exclude them from the selection.\\
-Since our focus was on a use-after-free vulnerability involving a reference-counting issue, we also excluded some tools whose papers clearly stated that they would not be effective for this purpose.\\
+Since our focus was on a use-after-free vulnerability involving a reference counting issue, we also excluded \emph{some} tools whose papers clearly stated that they would not be effective for this purpose.\\
 Finally, we excluded the tools that would not have worked on the kernel because they were designed for smaller, less complex sections of code.\\
-After considering these factors, the decision was made to choose UAFX and CountDown.
+After considering these factors, the decision was made to choose CountDown and UAFX.
+
+\subsection{CountDown}
+CountDown is a fuzzer for the Linux kernel, presented at CCS 2024 \cite{bib:countdown} and it's specifically designed to detect memory timing errors caused by incorrect handling of reference counters. Unlike traditional fuzzers, which are primarily driven by code coverage, CountDown uses operations on reference counters as feedback to identify sequences of system calls that could potentially alter the lifecycle of those same objects. The tool is built on top of Syzkaller \cite{bib:syzkaller} (an open source, unsupervised, coverage-guided kernel fuzzer developed by Google) and extends its strategies for generating and mutating test programs.
+
+During execution, CountDown instruments the kernel to associate increments, decrements, and accesses to reference counters with the system calls that triggered them. Based on this information, it establishes relationships between system calls that operate on the same counters and assigns them a higher probability of being combined in the generated tests. The tool can also repeatedly insert operations that decrement a counter, in an attempt to trigger the object's deallocation, followed by operations that continue to access it. In this way, fuzzing is directed toward sequences that can more effectively expose UAFs caused by incorrect operations on counters.
+
+CountDown's approach is based on the idea of refcount-driven fuzzing to achieve two macro-objectives:
+\begin{itemize}
+    \item \textit{Identification of refcount-based relationships between syscalls}: instead of relying solely on syscall signatures or coverage, CountDown correlates syscalls that operate on the same object (\textit{shared refcounts}).
+
+    \item \textit{Systematic exposure of UAF bugs}: through targeted mutations, the tool attempts to force an object's refcount to zero and subsequently access that object via syscalls that share its reference.
+\end{itemize}
+
+\subsubsection{Workflow}
+CountDown's workflow can be broken down into three main phases:
+\begin{enumerate}
+    \item \textbf{Kernel instrumentation and logging}: CountDown instruments the refcount APIs in the Linux kernel to log every refcount operation using a 4-element tuple:
+    \begin{center}
+        $<S, O, \delta, V>$
+    \end{center}
+    where a syscall S updates the refcount O by a value $\delta$. V is the final value.
+
+    The instrumented APIs are listed in the following table:
+
+    \begin{center}
+        \begin{tabular}{|c|c|}
+            \hline
+            \textbf{Name} & \textbf{Description} \\\hline
+            \texttt{refcount\_set} & set refcount to the given value \\\hline
+            \texttt{refcount\_add} & add the given value to refcount \\\hline
+            \texttt{refcount\_inc} & increase refcount by 1 \\\hline
+            \texttt{refcount\_dec} & decrease refcount by 1 \\\hline
+            \texttt{refcount\_add\_not\_zero} & add given value to refcount if refcount is not 0 \\\hline
+            \texttt{refcount\_inc\_not\_zero} & increment if the refcount is not 0 \\\hline
+            \texttt{refcount\_dec\_not\_one} & decrement if the refcount is not 1 \\\hline
+            \texttt{refcount\_dec\_if\_one} & decrement if the refcount is 1 \\\hline
+            \texttt{refcount\_dec\_and\_test} & decrement refcount and check if result is 0 \\\hline
+            \texttt{refcount\_sub\_and\_test} & subtract value from refcount and check it with 0 \\\hline
+        \end{tabular}
+        \label{table:refcounts}
+    \end{center}
+    
+    To identify the same object across different virtual machines during fuzzing, it uses a checksum of the call stack at the time of the object's initialization through \texttt{refcount\_set}.
+
+    CountDown creates a RAI map (\texttt{refcount-address-ID}) to link the memory addresses holding refcount values with their refcount IDs:
+    \begin{itemize}
+        \item when a refcount is initialized, a new entry in the RAI map is created with its address and ID;
+        \item when a refcount reaches zero, the entry is removed from the map;
+        \item when a refcount is incremented or decremented, CountDown searches the address in the map to find its ID and records the operation.
+    \end{itemize}
+
+    During fuzzing, to connect refcount operations with syscalls, CountDown records the Syzkaller syscall number (NR) for each operation and considers that one syscall may modify a refcount many times, but it only cares about the final variation ($\delta$). In order to do so, every API listed in table \ref{table:refcounts} is modified to record every single change.
+    This data is kept in a two-dimension table (one for the syscall number, one for the refcount ID), in which every entry records the current $\delta$ and the current $V$. 
+
+    \item \textbf{Reworking relationships between system calls}: \circled{1} CountDown constructs multiple relations among syscalls and refcounts starting from the operations mapped in the 4-tuple format $(S, O, \delta, V)$.
+    
+    First, it identifies syscalls that effectively change the refcount of any object. \circled{2} It projects a set of 4-tuples in a new map, where the key is the refcount ID and the value is a set of syscalls and their changes to the refcount ($\delta$), avoiding relations between syscalls from different programs (which can quickly become unrealiable).
+    
+    Based on the shared refcounts, every relation is reworked in a new one defined as \texttt{RefcntRelation}. The assumption is that, if two syscalls access the same refcount within one execution, they have a stronger relation with respect to triggering more complicated refcount operations. Each syscall set associated with a specific refcount is then split into a set of syscalls pairs \circled{3}. Following that, CountDown creates the syscall relation table, where each unique pair of syscalls has an entry and the value is the number of shared refcounts accessed by both \circled{4}.
+    
+    \begin{center}
+        \begin{figure}[h]
+            \centering
+            \includegraphics[width=0.7\linewidth]{images/countdown-step2.png}
+            \caption{Example of refcount-based syscall relation construction.}
+            \label{fig:countdown-step2}
+        \end{figure}
+    \end{center}
+    
+    As explained in the paper, this newly constructed relation is more effective at guiding the fuzzer toward detecting refcount-related UAF bugs. However, the kernel code base is very large and refcount operations are not densely distributed. To solve the problem, the \texttt{RefCntRelation} is merged with the Syzkaller's standard \texttt{SyzRelation} and handled based on the fuzzing time. At the beginning of fuzzing, CountDown assigns a high priority to the original coverage-based relation to quickly explore more kernel code. As time goes on, it allocates more weight to CountDown's own relation so that the fuzzer can focus on testing complex refcount operations. This can be represented as the following formula:
+
+    \begin{center}
+        $OverallRelation = log_2(SyzRelation) + k * log_2 (RefcntRelation)$
+    \end{center}
+
+    $k$ starts with a small value and is incremented every time after testing a fixed number of test cases.
+
+    Since fuzzers are non-deterministic, different kernel instances can gather different relations. When a new one is received from one VM, CountDown synchronizes it across all instances (to ensure that the other instances can directly make use of it) by fetching each VM's report, merging them and then distributing the result to all instances.
+
+    \item \textbf{Guided program mutation}: CountDown uses the learned relationships to generate new programs. It starts by using the mutators from previous fuzzing tools (like Syzkaller) to mutate the program. Having assigned higher weights to refcount-based relations, the mutation will prefer combining syscalls that are strongly related regarding refcount operations.  
+
+    Then it creates a new mutator that combines refcount-related syscalls more aggressively. CountDown chooses one target program and runs it in order to collect all accessed refcounts. It will update the refcount-syscall map if the execution triggers new records. To mutate the program, it will randomly select a refcount from the collected set. If a refcount was accessed multiple times, it will have a higher probability to be selected. 
+
+    CountDown then searches the map for syscalls that operate on this refcount and selects one for insertion into the program, which is done reusing Syzkaller's logic, preferring a later position, because the syscalls at the beginning may work on the initialization of resources and refcounts.
+
+    In addition to new code coverage, CountDown considers any program that exhibits a new \texttt{(syscall, refcount)} pair never seen before to be "interesting" and saves it for future changes. This is done while fuzzing through checking whether the execution triggers new code coverage or a new refcount operation, which was previously missed. If that's the case, it saves the new program into the input queue for further mutations and updates the refcount-syscall map with the new entry.
+
+    As a final but important point, a triggered refcount error will not immediately result in a memory error. CountDown needs to trigger more operations to make the kernel release the object and access it through dangling references. It does so by inserting more refcount-related syscalls into the executed program in order to reduce the gap between a refcount bug and a UAF, so that sanitizers like KASAN can capture it.
+\end{enumerate}
+
+\subsubsection{Limitations}
+Although CountDown is optimized to detect UAFs with refcounts, it still has some limitations:
+\begin{itemize}
+    \item \textbf{Generic refcounts}: some refcounts (such as those in the AppArmor security module) are used by nearly all syscalls, creating "noise" and artificial relationships that CountDown must filter out to maintain accuracy.
+
+    \item \textbf{Coverage trade-off}: because it focuses heavily on refcount logic, CountDown may record slightly lower total code coverage (approximately 1.8\% – 4.3\% less) than Syzkaller, as it ignores paths unrelated to object management.
+
+    \item \textbf{Instrumentation overhead}: although optimized through selective logging (excluding interrupts and asynchronous tasks), the constant monitoring of every refcount operation introduces a higher computational load than traditional fuzzing.
+\end{itemize}
 
 \subsection{UAFX}\label{uafx}
 UAFX is a static analyzer, presented at NDSS 2025 \cite{bib:uafx}, designed to detect \textit{cross-entry} (non-linear) use-after-free vulnerabilities in the Linux kernel. The term "cross-entry" refers to conditions in which the deallocation and subsequent use of an object occur through different entry points (e.g system calls, callbacks, driver interfaces). In such cases, the link between the deallocation point and the usage point may involve parts distributed across distinct execution paths, making it difficult to detect using analyzers limited to a single function or a single call chain (i.e. where memory allocation, usage, and deallocation occur in a linear pattern). UAFX's approach is based on achieving two main macro-objectives:
@@ -284,107 +382,10 @@ Although UAFX is designed to automatically identify use-after-free vulnerabiliti
 
 A first limitation concerns the identification of entry functions. As described previously, UAFX automatically considers functions with no callers as potential entry points, but relevant functions may themselves be invoked by other functions and therefore not satisfy this criterion. UAFX addresses this limitation by allowing additional entry functions to be manually included in the candidate set during the second stage of the identification process.
 
-A more significant limitation concerns reference-counting mechanisms. As explicitly discussed by the authors in the \textit{Reference Count Mechanisms} section of the UAFX paper \cite{bib:uafx}, candidates involving reference counting are intentionally excluded from the analysis. Tracking the lifetime of reference-counted objects introduces additional complexity and may produce a large number of false positives. The authors therefore favor higher precision at the cost of reduced recall for this class of lifetime-management errors.
+A more significant limitation concerns reference counting mechanisms. As explicitly discussed by the authors in the \textit{Reference Count Mechanisms} section of the UAFX paper \cite{bib:uafx}, candidates involving reference counting are intentionally excluded from the analysis. Tracking the lifetime of reference-counted objects introduces additional complexity and may produce a large number of false positives. The authors therefore favor higher precision at the cost of reduced recall for this class of lifetime-management errors.
 
-This limitation does not imply that reference-count-related vulnerabilities cannot be addressed through static analysis. Other tools focus specifically on the analysis of reference-counting mechanisms and may complement the approach adopted by UAFX. In particular, LinKRID \cite{bib:linkrid}, CRCount \cite{bib:crcount}, and FreeWill \cite{bib:freewill} are discussed in relation to the identification of reference-counting errors. Their analyses could potentially be combined with or used to extend UAFX, although doing so would require adapting the respective analyses and reconciling their different representations of object lifetime and reference-management operations.
+This limitation does not imply that reference-count-related vulnerabilities cannot be addressed through static analysis. Other tools focus specifically on the analysis of reference counting mechanisms and may complement the approach adopted by UAFX. In particular, LinKRID \cite{bib:linkrid}, CRCount \cite{bib:crcount}, and FreeWill \cite{bib:freewill} are discussed in relation to the identification of reference counting errors. Their analyses could potentially be combined with or used to extend UAFX, although doing so would require adapting the respective analyses and reconciling their different representations of object lifetime and reference-management operations.
 
 Such an extension would broaden the class of lifetime errors considered by UAFX, potentially improving its ability to detect use-after-free conditions originating from incorrect reference-count management. However, this would also introduce the precision-recall trade-off that UAFX deliberately avoids in its original design.
 
-\subsection{CountDown}
-CountDown is a fuzzer for the Linux kernel, presented at CCS 2024 \cite{bib:countdown} and, unlike UAFX, it's specifically designed to detect memory timing errors caused by incorrect handling of reference counters. Unlike traditional fuzzers, which are primarily driven by code coverage, CountDown uses operations on reference counters as feedback to identify sequences of system calls that could potentially alter the lifecycle of those same objects. The tool is built on top of Syzkaller \cite{bib:syzkaller} (an open source, unsupervised, coverage-guided kernel fuzzer developed by Google) and extends its strategies for generating and mutating test programs.
-
-During execution, CountDown instruments the kernel to associate increments, decrements, and accesses to reference counters with the system calls that triggered them. Based on this information, it establishes relationships between system calls that operate on the same counters and assigns them a higher probability of being combined in the generated tests. The tool can also repeatedly insert operations that decrement a counter, in an attempt to trigger the object's deallocation, followed by operations that continue to access it. In this way, fuzzing is directed toward sequences that can more effectively expose UAFs caused by incorrect operations on counters.
-
-CountDown's approach is based on the idea of refcount-driven fuzzing to achieve two macro-objectives:
-\begin{itemize}
-    \item \textit{Identification of refcount-based relationships between syscalls}: instead of relying solely on syscall signatures or coverage, CountDown correlates syscalls that operate on the same object (\textit{shared refcounts}).
-
-    \item \textit{Systematic exposure of UAF bugs}: through targeted mutations, the tool attempts to force an object's refcount to zero and subsequently access that object via syscalls that share its reference.
-\end{itemize}
-
-\subsubsection{Workflow}
-CountDown's workflow can be broken down into three main phases:
-\begin{enumerate}
-    \item \textbf{Kernel instrumentation and logging}: CountDown instruments the refcount APIs in the Linux kernel to log every refcount operation using a 4-element tuple:
-    \begin{center}
-        $<S, O, \delta, V>$
-    \end{center}
-    where a syscall S updates the refcount O by a value $\delta$. V is the final value.
-
-    The instrumented APIs are listed in the following table:
-
-    \begin{center}
-        \begin{tabular}{|c|c|}
-            \hline
-            \textbf{Name} & \textbf{Description} \\\hline
-            \texttt{refcount\_set} & set refcount to the given value \\\hline
-            \texttt{refcount\_add} & add the given value to refcount \\\hline
-            \texttt{refcount\_inc} & increase refcount by 1 \\\hline
-            \texttt{refcount\_dec} & decrease refcount by 1 \\\hline
-            \texttt{refcount\_add\_not\_zero} & add given value to refcount if refcount is not 0 \\\hline
-            \texttt{refcount\_inc\_not\_zero} & increment if the refcount is not 0 \\\hline
-            \texttt{refcount\_dec\_not\_one} & decrement if the refcount is not 1 \\\hline
-            \texttt{refcount\_dec\_if\_one} & decrement if the refcount is 1 \\\hline
-            \texttt{refcount\_dec\_and\_test} & decrement refcount and check if result is 0 \\\hline
-            \texttt{refcount\_sub\_and\_test} & subtract value from refcount and check it with 0 \\\hline
-        \end{tabular}
-        \label{table:refcounts}
-    \end{center}
-    
-    To identify the same object across different virtual machines (VMs), it uses a checksum of the call stack at the time of the object's initialization through \texttt{refcount\_set}.
-
-    CountDown creates a RAI map (\texttt{refcount-address-ID}) to link the addresses of the refcounts with their refcount IDs.\\
-    When a refcount is initialized, a new entry in the RAI map is created with its address and ID.\\
-    When a refcount reaches zero, the entry is removed from the map.\\
-    When a refcount is incremented or decremented, CountDown searches the address in the map to find its ID and records the operation.
-
-    During fuzzing, to connect refcount operations with syscalls, CountDown needs to record the Syzkaller syscall number (NR) for each operation. This is done in a thread-safe manner in order to avoid race condition, since the Linux kernel utilizes multiple threads to execute parallelized syscalls.
-
-    While tracking the refcount values, CountDown considers that one syscall may modify a refcount many times, but it only cares about the final variation ($\delta$). In order to do so, every refcount API listed in table \ref{table:refcounts} is modified to record every single refcount change.
-    This data is kept in a two-dimension table (one for the syscall number, one for the refcount ID), in which every entry records the current $\delta$ and the current $V$. 
-
-    \item \textbf{Reworking relationships between system calls}: CountDown constructs multiple relations among syscalls and refcounts starting from the refcount operations mapped in the 4-tuple format $(S, O, \delta, V)$.
-    
-    First, it identifies syscalls that effectively change the refcount of any object. It remaps a set of 4-tuples in a new map, where the key is the refcount ID and the value is a set of syscalls and their changes to the refcount ($\delta$), avoiding relations between syscalls from different programs (which can quickly become unrealiable).
-    
-    Based on the shared refcounts, every relation is reworked in a new one defined as \texttt{RefcntRelation}. The assumption is that, if two syscalls access the same refcount within one execution, they have a stronger relation with respect to triggering more complicated refcount operations. Each syscall set associated with a specific refcount is then split into a set of syscalls pairs. Following that, CountDown creates the syscall relation table, where each unique pair of syscalls has an entry and the value is the number of shared refcounts accessed by both.
-    
-    \begin{center}
-        \begin{figure}[h]
-            \centering
-            \includegraphics[width=0.7\linewidth]{images/countdown-step2.png}
-            \caption{Example of refcount-based syscall relation construction.}
-            \label{fig:countdown-step2}
-        \end{figure}
-    \end{center}
-    
-    As explained in the paper, this newly constructed relation is more efficient in detecting refcount-related UAF bugs. However, the kernel code base is very large and refcount operations are not densely distributed. To solve the problem, the \texttt{RefCntRelation} is merged with the Syzkaller's standard \texttt{SyzRelation} and handled based on the fuzzing time. At the beginning of fuzzing, CountDown assigns a high priority to the original coverage-based relation to quickly explore more kernel code. As time goes on, it allocates more weight to CountDown's own relation so that the fuzzer can focus on testing complex refcount operations. This can be represented as the following formula:
-
-    \begin{center}
-        $OverallRelation = log_2(SyzRelation) + k * log_2 (RefcntRelation)$
-    \end{center}
-
-    $k$ starts with a small value and is incremented every time after testing a fixed number of test cases.
-
-    Since fuzzers are non-deterministic, different kernel instances can gather different relations. When a new one is received from one VM, CountDown synchronizes it across all instances (to ensure that the other instances can directly make use of it) by fetching each VM's report, merging them and then distributing the result to all instances.
-
-    \item \textbf{Guided program mutation}: CountDown uses the learned relationships to generate new programs. It starts by using the mutators from previous fuzzing tools (like Syzkaller) to mutate the program. Having assigned higher weights to refcount-based relations, the mutation will prefer combining syscalls that are strongly related regarding refcount operations.  
-
-    Then it creates a new mutator that combines refcount-related syscalls more aggressively. CountDown chooses one target program and runs it in order to collect all accessed refcounts. It will update the refcount-syscall map if the execution triggers new records. To mutate the program, it will randomly select a refcount from the collected set. If a refcount was accessed multiple times, it will have a higher probability to be selected. 
-
-    CountDown then searches the map for syscalls that operate on this refcount and selects one for insertion into the program, which is done reusing Syzkaller's logic, preferring a later position, because the syscalls at the beginning may work on the initialization of resources and refcounts.
-
-    In addition to new code coverage, CountDown considers any program that exhibits a new \texttt{(syscall, refcount)} pair never seen before to be "interesting" and saves it for future changes. This is done while fuzzing through checking whether the execution triggers new code coverage or a new refcount operation, which was previously missed. If that's the case, it saves the new program into the input queue for further mutations and updates the refcount-syscall map with the new entry.
-
-    As a final but important point, a triggered refcount error will not immediately result in a memory error. CountDown needs to trigger more operations to make the kernel release the object and access it through dangling references. It does so by inserting more refcount-related syscalls into the executed program in order to reduce the gap between a refcount bug and a UAF, so that sanitizers like KASAN can capture it.
-\end{enumerate}
-
-\subsubsection{Limitations}
-Although CountDown is optimized to detect UAFs with refcounts, it still has some limitations:
-\begin{itemize}
-    \item \textbf{Generic refcounts}: some refcounts (such as those in the AppArmor security module) are used by nearly all syscalls, creating "noise" and artificial relationships that CountDown must filter out to maintain accuracy.
-
-    \item \textbf{Coverage trade-off}: because it focuses heavily on refcount logic, CountDown may record slightly lower total code coverage (approximately 1.8\% – 4.3\% less) than Syzkaller, as it ignores paths unrelated to object management.
-
-    \item \textbf{Instrumentation overhead}: although optimized through selective logging (excluding interrupts and asynchronous tasks), the constant monitoring of every refcount operation introduces a higher computational load than traditional fuzzing.
-\end{itemize}
+One final "limitation", though not entirely so, is the fact that, in the paper, UAFX appears to have been tested only on drivers. In our case, the tests are performed on linked Linux kernel modules, which, as such, present a more complex challenge than a single-entity context like a driver.
